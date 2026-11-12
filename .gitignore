@@ -1,0 +1,18 @@
+﻿# 构建输出
+bin/
+obj/
+publish*/
+publish-rustdesk/
+
+# 调试/临时文件
+*.pdb
+*.user
+*.suo
+.vs/
+*.log
+
+# 运行日志
+LanChat-runtime-*.txt
+
+# 工具生成的本地仓库元数据
+third_party/rustdesk-gitmeta/
