@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseAppHost>true</UseAppHost>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FFmpegDotNet.bin.winx64" Version="9.0.2" ExcludeAssets="compile;runtime;contentFiles;analyzers" />
+    <PackageReference Include="FFmpegDotNet._AutoGen" Version="9.0.1" ExcludeAssets="all" />
+    <None Remove="$(NuGetPackageRoot)ffmpegdotnet.bin.winx64\9.0.2\ffmpeg\win-x64\*" />
+    <EmbeddedResource Include="$(NuGetPackageRoot)ffmpegdotnet.bin.winx64\9.0.2\ffmpeg\win-x64\ffmpeg.exe;$(NuGetPackageRoot)ffmpegdotnet.bin.winx64\9.0.2\ffmpeg\win-x64\*.dll">
+      <LogicalName>LanChat.FFmpeg.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FFmpeg-LICENSE.txt;ThirdPartyNotices.txt" />
+    <EmbeddedResource Include="third_party\rustdesk-1.5.3-x86_64.exe;third_party\rustdesk-1.5.3-corresponding-source.zip;third_party\AGPL-3.0.txt">
+      <LogicalName>LanChat.RustDesk.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>
