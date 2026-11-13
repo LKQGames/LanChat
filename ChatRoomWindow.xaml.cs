@@ -731,17 +731,24 @@ public partial class ChatRoomWindow : Window
 
     private async Task<string> RunOwnerCommandAsync(string raw, bool fromAdmin = false, string? requesterName = null)
     {
+        // 管理员发起的指令只回给发起人，避免房主聊天区出现无关提示。
+        void Report(string text)
+        {
+            if (fromAdmin) AppLog.Write($"管理员指令反馈：{text}");
+            else AddMessage("系统", text, null, null);
+        }
+
         var parts = raw.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 1 && parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
             const string help = "用法：/mute 用户名或IP · /kick 用户名或IP · /ban 用户名或IP · /ipban IP · /unban 用户名或IP · /unipban IP";
-            AddMessage("系统", help, null, null);
+            Report(help);
             return help;
         }
         if (parts.Length != 2 || parts[1].Length == 0)
         {
             const string usage = "指令格式：/指令 用户名或IP。输入 /help 查看可用指令。";
-            AddMessage("系统", usage, null, null);
+            Report(usage);
             return usage;
         }
 
@@ -750,7 +757,7 @@ public partial class ChatRoomWindow : Window
         if (command is "/admin" or "/unadmin")
         {
             const string onlyOwner = "只有房主可以设置或取消管理员。";
-            AddMessage("系统", onlyOwner, null, null);
+            Report(onlyOwner);
             return onlyOwner;
         }
         if (fromAdmin)
@@ -758,7 +765,7 @@ public partial class ChatRoomWindow : Window
             var denied = DenyModerationReason(target, requesterName);
             if (denied is not null)
             {
-                AddMessage("系统", denied, null, null);
+                Report(denied);
                 return denied;
             }
         }
@@ -766,7 +773,7 @@ public partial class ChatRoomWindow : Window
         if (command is "/ipban" or "/unipban" && !IPAddress.TryParse(target, out _))
         {
             var invalid = $"{command} 的目标必须是有效 IP 地址。";
-            AddMessage("系统", invalid, null, null);
+            Report(invalid);
             return invalid;
         }
 
@@ -804,7 +811,7 @@ public partial class ChatRoomWindow : Window
                     break;
                 default:
                     const string unknown = "未知指令。可用：/mute、/kick、/ban、/ipban、/unban、/unipban、/help";
-                    AddMessage("系统", unknown, null, null);
+                    Report(unknown);
                     return unknown;
             }
 
@@ -860,7 +867,7 @@ public partial class ChatRoomWindow : Window
             "/unipban" => $"已解除 IP {target} 的封禁（如存在）。",
             _ => ""
         };
-        AddMessage("系统", report, null, null);
+        Report(report);
         if (command == "/mute")
         {
             await BroadcastAsync(new RoomPacket { Type = "system", Room = _roomName, Text = $"房主更新了 {target} 的发言权限。" }, _shutdown.Token);
@@ -883,7 +890,10 @@ public partial class ChatRoomWindow : Window
         if (TargetsHost(target)) return denied;
         lock (_peerLock)
         {
-            if (_adminNames.Contains(target) || _adminIps.Contains(target)) return denied;
+            // 优先按用户名判定：同一公网 IP 下可能有多名成员，不能因为 IP 相同就拒绝。
+            var peer = _peers.FirstOrDefault(p => p.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
+            if (peer is not null) return _adminNames.Contains(peer.Name) ? denied : null;
+            if (IPAddress.TryParse(target, out _) && _adminIps.Contains(target)) return denied;
         }
         return null;
     }
@@ -978,8 +988,8 @@ public partial class ChatRoomWindow : Window
     private bool CanManageMember(RoomMember target)
     {
         if (string.Equals(target.Name, _userName, StringComparison.OrdinalIgnoreCase)) return false;
-        if (_listener is not null) return target.Role != "创建者";
-        return _myRole == "管理员" && target.Role == "访客";
+        if (target.Role is "创建者" or "管理员") return false;
+        return _listener is not null || _myRole == "管理员";
     }
 
     private void MembersList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -1032,8 +1042,8 @@ public partial class ChatRoomWindow : Window
             AddMessage("系统", "不能对管理员和自己进行管理操作。", null, null);
             return;
         }
-        if (_listener is not null) await RunOwnerCommandAsync($"{command} {member.Ip}");
-        else if (_myRole == "管理员") await SendAdminCommandAsync($"{command} {member.Ip}");
+        if (_listener is not null) await RunOwnerCommandAsync($"{command} {member.Name}");
+        else if (_myRole == "管理员") await SendAdminCommandAsync($"{command} {member.Name}");
         else AddMessage("系统", "只有房主或管理员可以管理成员。", null, null);
     }
 
