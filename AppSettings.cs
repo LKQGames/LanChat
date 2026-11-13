@@ -32,7 +32,7 @@ internal static class AppSettings
         get
         {
             EnsureLoaded();
-            return _sendOnEnter ?? false;
+            return _sendOnEnter ?? true;
         }
         set
         {

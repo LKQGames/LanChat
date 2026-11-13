@@ -6,7 +6,9 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Net.Sockets;
 using Microsoft.Win32;
@@ -51,6 +53,10 @@ public partial class ChatRoomWindow : Window
     private readonly HashSet<string> _ipBannedIps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _kickedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _kickedIps = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _adminNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _adminIps = new(StringComparer.OrdinalIgnoreCase);
+    private string _myRole = "访客";
+    private RoomMember? _contextMember;
     private readonly ObservableCollection<ChatMessage> _messages = new();
     private readonly ObservableCollection<RoomMember> _members = new();
     private readonly DateTime _roomStartedAt = DateTime.Now;
@@ -62,6 +68,19 @@ public partial class ChatRoomWindow : Window
     private bool _sendShortcutConfigured;
     private bool _isUploading;
     private int _remoteConsentOpen;
+    private string? _replySender;
+    private string? _replyText;
+    private TextPointer? _mentionFragmentStart;
+    private bool _suppressMentionSuggestions;
+    private bool _mentionDismissed;
+    private static readonly Brush MentionForeground = CreateMentionBrush();
+
+    private static Brush CreateMentionBrush()
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(0x4C, 0x9A, 0xFF));
+        brush.Freeze();
+        return brush;
+    }
     private int _uploadGeneration;
 
     private const uint InputTypeKeyboard = 1;
@@ -144,6 +163,7 @@ public partial class ChatRoomWindow : Window
         _roomName = roomName;
         _password = password;
         _userName = string.IsNullOrWhiteSpace(userName) || userName == "输入用户名" ? "房主" : userName;
+        _myRole = "创建者";
         IsPublic = isPublic;
         _listener = new TcpListener(IPAddress.Any, port);
         _listener.Start();
@@ -170,6 +190,21 @@ public partial class ChatRoomWindow : Window
         catch (SocketException) { RoomSubtitle.Text += " · 局域网搜索不可用"; }
         AddMessage("系统", "聊天室已启动。输入文字发送，或使用按钮附加文件与图片。", null, null);
         AppLog.Write($"已创建聊天室“{roomName}”，端口 {port}，{(IsPublic ? "公开" : "私密")}。");
+        TrackMemberNames();
+    }
+
+    private void TrackMemberNames()
+    {
+        _members.CollectionChanged += (_, _) =>
+        {
+            if (Dispatcher.HasShutdownStarted) return;
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!Dispatcher.HasShutdownStarted)
+                    MentionTextBlock.SetKnownNames(_members.Select(member => member.Name).ToArray());
+            }), DispatcherPriority.Background);
+        };
+        MentionTextBlock.SetKnownNames(_members.Select(member => member.Name).ToArray());
     }
 
     public bool IsPublic { get; }
@@ -219,6 +254,7 @@ public partial class ChatRoomWindow : Window
         _lastServerHeartbeatTicks = DateTime.UtcNow.Ticks;
         _ = MonitorServerHeartbeatAsync(_shutdown.Token);
         AppLog.Write($"正在连接聊天室“{roomName}”：{host}:{port}。");
+        TrackMemberNames();
     }
 
     private async Task AnswerDiscoveryAsync(CancellationToken cancellationToken)
@@ -309,6 +345,16 @@ public partial class ChatRoomWindow : Window
                 if (packet.Type is "member-joined" or "member-left")
                 {
                     await Dispatcher.InvokeAsync(() => UpdateMember(packet));
+                    continue;
+                }
+                if (packet.Type == "member-role")
+                {
+                    await Dispatcher.InvokeAsync(() => ApplyRoleChange(packet));
+                    continue;
+                }
+                if (packet.Type is "admin-result" or "admin-ban-list")
+                {
+                    await Dispatcher.InvokeAsync(() => HandleAdminResponse(packet));
                     continue;
                 }
                 if (packet.Type == "attachment-chunk")
@@ -485,9 +531,9 @@ public partial class ChatRoomWindow : Window
             lock (_peerLock) existing = _peers.Where(p => !ReferenceEquals(p, peer)).ToArray();
             await WritePacketAsync(stream, new RoomPacket { Type = "member-joined", Sender = _userName, SenderIp = GetLocalPrivateIpv4(), SenderRole = "创建者" }, cancellationToken);
             foreach (var existingPeer in existing)
-                await WritePacketAsync(stream, new RoomPacket { Type = "member-joined", Sender = existingPeer.Name, SenderIp = existingPeer.Ip, SenderRole = "访客" }, cancellationToken);
-            await BroadcastAsync(new RoomPacket { Type = "member-joined", Sender = peer.Name, SenderIp = peer.Ip, SenderRole = "访客" }, cancellationToken);
-            await Dispatcher.InvokeAsync(() => _members.Add(new RoomMember(peer.Name, peer.Ip, "访客")));
+                await WritePacketAsync(stream, new RoomPacket { Type = "member-joined", Sender = existingPeer.Name, SenderIp = existingPeer.Ip, SenderRole = RoleOf(existingPeer) }, cancellationToken);
+            await BroadcastAsync(new RoomPacket { Type = "member-joined", Sender = peer.Name, SenderIp = peer.Ip, SenderRole = RoleOf(peer) }, cancellationToken);
+            await Dispatcher.InvokeAsync(() => _members.Add(new RoomMember(peer.Name, peer.Ip, RoleOf(peer))));
             var joinNotice = new RoomPacket { Type = "system", Room = _roomName, Text = $"{peer.Name} · {peer.Ip} 加入了聊天室。" };
             await BroadcastAsync(joinNotice, cancellationToken);
             await Dispatcher.InvokeAsync(() => AddPacket(joinNotice));
@@ -513,6 +559,11 @@ public partial class ChatRoomWindow : Window
                     await HandleRemotePacketFromPeerAsync(peer, packet, cancellationToken);
                     continue;
                 }
+                if (packet.Type?.StartsWith("admin-", StringComparison.Ordinal) == true)
+                {
+                    await HandleAdminPacketAsync(peer, packet, cancellationToken);
+                    continue;
+                }
                 if (packet.Type is not ("text" or "attachment-chunk")) continue;
                 bool muted;
                 lock (_peerLock) muted = _mutedNames.Contains(peer.Name) || _mutedIps.Contains(peer.Ip);
@@ -523,7 +574,7 @@ public partial class ChatRoomWindow : Window
                 }
                 packet.Room = _roomName;
                 packet.Sender = peer.Name;
-                packet.SenderRole = "访客";
+                packet.SenderRole = RoleOf(peer);
                 packet.SenderIp = peer.Ip;
                 await BroadcastAsync(packet, cancellationToken);
                 if (packet.Type == "attachment-chunk")
@@ -620,7 +671,7 @@ public partial class ChatRoomWindow : Window
 
     private async void Send_Click(object sender, RoutedEventArgs e)
     {
-        var text = MessageInput.Text.Trim();
+        var text = GetMessageInputText().Trim();
         if (text.Length == 0) return;
         if (_upstreamStream is not null && _isMuted)
         {
@@ -630,41 +681,93 @@ public partial class ChatRoomWindow : Window
         }
         if (text.StartsWith('/'))
         {
-            MessageInput.Clear();
-            if (_upstreamStream is not null)
-                AddMessage("系统", "管理指令仅房主可用。", null, null);
-            else
-                await RunOwnerCommandAsync(text);
+            ClearMessageInput();
+            if (_listener is not null) await RunOwnerCommandAsync(text);
+            else if (_myRole == "管理员") await SendAdminCommandAsync(text);
+            else AddMessage("系统", "只有房主或管理员可以使用管理指令。", null, null);
             return;
         }
-        var packet = new RoomPacket { Type = "text", Room = _roomName, Sender = _userName, SenderRole = _listener is null ? "访客" : "创建者", SenderIp = GetLocalPrivateIpv4(), Text = text };
+        var packet = new RoomPacket
+        {
+            Type = "text", Room = _roomName, Sender = _userName, SenderRole = _myRole,
+            SenderIp = GetLocalPrivateIpv4(), Text = text, ReplySender = _replySender, ReplyText = _replyText
+        };
         AppLog.Write($"{_roomName} · {_userName}: {text}");
-        MessageInput.Clear();
+        ClearMessageInput();
+        ClearReply();
         if (_upstreamStream is not null) await WriteUpstreamPacketAsync(packet, _shutdown.Token);
         else { AddPacket(packet); await BroadcastAsync(packet, _shutdown.Token); }
     }
 
-    private async Task RunOwnerCommandAsync(string raw)
+    private string GetMessageInputText()
+    {
+        var range = new TextRange(MessageInput.Document.ContentStart, MessageInput.Document.ContentEnd);
+        return range.Text.Replace("\r\n", "\n").TrimEnd('\n');
+    }
+
+    private void ClearMessageInput()
+    {
+        _suppressMentionSuggestions = true;
+        try
+        {
+            MessageInput.Document.Blocks.Clear();
+            MessageInput.Document.Blocks.Add(new Paragraph());
+            MessageInput.CaretPosition = MessageInput.Document.ContentEnd;
+        }
+        finally { _suppressMentionSuggestions = false; }
+        HideMentionPopup();
+    }
+
+    private void ClearReply()
+    {
+        _replySender = null;
+        _replyText = null;
+        ReplyBar.Visibility = Visibility.Collapsed;
+        ReplySenderText.Text = string.Empty;
+        ReplyPreviewText.Text = string.Empty;
+    }
+
+    private void CancelReply_Click(object sender, MouseButtonEventArgs e) => ClearReply();
+
+    private async Task<string> RunOwnerCommandAsync(string raw, bool fromAdmin = false, string? requesterName = null)
     {
         var parts = raw.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (parts.Length == 1 && parts[0].Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
-            AddMessage("系统", "用法：/mute 用户名或IP · /kick 用户名或IP · /ban 用户名或IP · /ipban IP · /unban 用户名或IP · /unipban IP", null, null);
-            return;
+            const string help = "用法：/mute 用户名或IP · /kick 用户名或IP · /ban 用户名或IP · /ipban IP · /unban 用户名或IP · /unipban IP";
+            AddMessage("系统", help, null, null);
+            return help;
         }
         if (parts.Length != 2 || parts[1].Length == 0)
         {
-            AddMessage("系统", "指令格式：/指令 用户名或IP。输入 /help 查看可用指令。", null, null);
-            return;
+            const string usage = "指令格式：/指令 用户名或IP。输入 /help 查看可用指令。";
+            AddMessage("系统", usage, null, null);
+            return usage;
         }
 
         var command = parts[0].ToLowerInvariant();
         var target = parts[1].Trim();
-        AppLog.Write($"房主命令请求：{command} {target}。");
+        if (command is "/admin" or "/unadmin")
+        {
+            const string onlyOwner = "只有房主可以设置或取消管理员。";
+            AddMessage("系统", onlyOwner, null, null);
+            return onlyOwner;
+        }
+        if (fromAdmin)
+        {
+            var denied = DenyModerationReason(target, requesterName);
+            if (denied is not null)
+            {
+                AddMessage("系统", denied, null, null);
+                return denied;
+            }
+        }
+        AppLog.Write($"房主命令请求：{command} {target}（来源：{(fromAdmin ? "管理员" : "房主")}）。");
         if (command is "/ipban" or "/unipban" && !IPAddress.TryParse(target, out _))
         {
-            AddMessage("系统", $"{command} 的目标必须是有效 IP 地址。", null, null);
-            return;
+            var invalid = $"{command} 的目标必须是有效 IP 地址。";
+            AddMessage("系统", invalid, null, null);
+            return invalid;
         }
 
         Peer[] matches;
@@ -700,8 +803,9 @@ public partial class ChatRoomWindow : Window
                     _ipBannedIps.Remove(target);
                     break;
                 default:
-                    AddMessage("系统", "未知指令。可用：/mute、/kick、/ban、/ipban、/unban、/unipban、/help", null, null);
-                    return;
+                    const string unknown = "未知指令。可用：/mute、/kick、/ban、/ipban、/unban、/unipban、/help";
+                    AddMessage("系统", unknown, null, null);
+                    return unknown;
             }
 
             if (command is "/kick" or "/ban" or "/ipban")
@@ -761,6 +865,37 @@ public partial class ChatRoomWindow : Window
         {
             await BroadcastAsync(new RoomPacket { Type = "system", Room = _roomName, Text = $"房主更新了 {target} 的发言权限。" }, _shutdown.Token);
         }
+        return report;
+    }
+
+    private bool TargetsHost(string target)
+    {
+        if (string.Equals(target, _userName, StringComparison.OrdinalIgnoreCase)) return true;
+        return IPAddress.TryParse(target, out _) && IsLocalAddress(target);
+    }
+
+    /// <summary>管理员不能对房主、其他管理员或自己执行管理操作。</summary>
+    private string? DenyModerationReason(string target, string? requesterName)
+    {
+        const string denied = "不能对管理员和自己进行管理操作。";
+        if (!string.IsNullOrWhiteSpace(requesterName) && string.Equals(target, requesterName, StringComparison.OrdinalIgnoreCase))
+            return denied;
+        if (TargetsHost(target)) return denied;
+        lock (_peerLock)
+        {
+            if (_adminNames.Contains(target) || _adminIps.Contains(target)) return denied;
+        }
+        return null;
+    }
+
+    private async Task SendAdminCommandAsync(string command)
+    {
+        if (_upstreamStream is null) return;
+        await WriteUpstreamPacketAsync(new RoomPacket
+        {
+            Type = "admin-command", Room = _roomName, Sender = _userName, SenderIp = GetLocalPrivateIpv4(), Text = command
+        }, _shutdown.Token);
+        AppLog.Write($"已向房主提交管理员指令：{command}。");
     }
 
     private void MembersToggle_Changed(object sender, RoutedEventArgs e)
@@ -782,22 +917,81 @@ public partial class ChatRoomWindow : Window
         }
         if (_members.All(m => !(m.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && m.Ip == ip)))
             _members.Add(new RoomMember(name, ip, packet.SenderRole ?? "访客"));
+        if (string.Equals(name, _userName, StringComparison.OrdinalIgnoreCase))
+            _myRole = packet.SenderRole ?? "访客";
+    }
+
+    private void ApplyRoleChange(RoomPacket packet)
+    {
+        var name = packet.Sender ?? string.Empty;
+        var ip = packet.SenderIp ?? string.Empty;
+        var role = string.IsNullOrWhiteSpace(packet.SenderRole) ? "访客" : packet.SenderRole;
+        var member = _members.FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && m.Ip == ip);
+        if (member is not null)
+        {
+            var index = _members.IndexOf(member);
+            if (index >= 0) _members[index] = member with { Role = role };
+        }
+        if (string.Equals(name, _userName, StringComparison.OrdinalIgnoreCase)) _myRole = role;
+        AppLog.Write($"成员身份更新：{name} 现在是{role}。");
+    }
+
+    private void HandleAdminResponse(RoomPacket packet)
+    {
+        if (packet.Type == "admin-result")
+        {
+            AddMessage("系统", string.IsNullOrWhiteSpace(packet.Text) ? "管理员指令已执行。" : packet.Text, null, null);
+            return;
+        }
+        BanRecord[] records;
+        try { records = JsonSerializer.Deserialize<BanRecord[]>(packet.Text ?? "[]") ?? []; }
+        catch (JsonException) { records = []; }
+        new BanListWindow(records,
+            record => _ = SendAdminCommandAsync($"{(record.Kind == "用户封禁" ? "/unban" : "/unipban")} {record.Target}"))
+        { Owner = this }.ShowDialog();
     }
 
     private void MembersList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (MembersList.SelectedItem is null) { e.Handled = true; return; }
-        if (_listener is null && MembersList.ContextMenu is not null)
-            foreach (var item in MembersList.ContextMenu.Items.OfType<MenuItem>().Where(i => i.Tag is string)) item.Visibility = Visibility.Collapsed;
-        else if (MembersList.ContextMenu is not null)
-            foreach (var item in MembersList.ContextMenu.Items.OfType<MenuItem>().Where(i => i.Tag is string)) item.Visibility = Visibility.Visible;
+        var member = _contextMember ?? MembersList.SelectedItem as RoomMember;
+        if (member is null || MembersList.ContextMenu is null) { e.Handled = true; return; }
+        var isHost = _listener is not null;
+        var canManage = CanManageMember(member);
+        var targetIsHost = member.Role == "创建者";
+        var isSelf = string.Equals(member.Name, _userName, StringComparison.OrdinalIgnoreCase);
+        foreach (var item in MembersList.ContextMenu.Items.OfType<MenuItem>())
+        {
+            if (item.Tag is string)
+            {
+                item.Visibility = canManage ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else if (ReferenceEquals(item, AdminToggleItem))
+            {
+                var visible = isHost && !targetIsHost && !isSelf;
+                item.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                if (visible) item.Header = member.Role == "管理员" ? "取消管理员" : "设为管理员";
+            }
+        }
+    }
+
+    /// <summary>房主可以管理除自己以外的所有成员；管理员只能管理访客。</summary>
+    private bool CanManageMember(RoomMember target)
+    {
+        if (string.Equals(target.Name, _userName, StringComparison.OrdinalIgnoreCase)) return false;
+        if (_listener is not null) return target.Role != "创建者";
+        return _myRole == "管理员" && target.Role == "访客";
     }
 
     private void MembersList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is not DependencyObject source) return;
         var item = ItemsControl.ContainerFromElement(MembersList, source) as ListBoxItem;
-        if (item is not null) item.IsSelected = true;
+        if (item?.DataContext is RoomMember member)
+        {
+            item.IsSelected = true;
+            _contextMember = member;
+        }
+        else _contextMember = null;
     }
 
     private void Window_PreviewDragOver(object sender, DragEventArgs e)
@@ -817,28 +1011,133 @@ public partial class ChatRoomWindow : Window
 
     private void MessageInput_Pasting(object sender, DataObjectPastingEventArgs e)
     {
-        if (!e.DataObject.GetDataPresent(DataFormats.FileDrop, true) || e.DataObject.GetData(DataFormats.FileDrop, true) is not string[] paths || paths.Length == 0) return;
-        e.CancelCommand();
-        _ = UploadFilesAsync(paths, false);
+        if (e.DataObject.GetDataPresent(DataFormats.FileDrop, true) && e.DataObject.GetData(DataFormats.FileDrop, true) is string[] paths && paths.Length > 0)
+        {
+            e.CancelCommand();
+            _ = UploadFilesAsync(paths, false);
+            return;
+        }
+        if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText, true)) return;
+        var text = e.DataObject.GetData(DataFormats.UnicodeText, true) as string ?? string.Empty;
+        var plain = new DataObject();
+        plain.SetText(text);
+        e.DataObject = plain;
     }
 
     private async void MemberCommand_Click(object sender, RoutedEventArgs e)
     {
-        if (_listener is null || sender is not MenuItem { Tag: string command } || MembersList.SelectedItem is not RoomMember member) return;
-        await RunOwnerCommandAsync($"{command} {member.Ip}");
+        if (sender is not MenuItem { Tag: string command } || MembersList.SelectedItem is not RoomMember member) return;
+        if (!CanManageMember(member))
+        {
+            AddMessage("系统", "不能对管理员和自己进行管理操作。", null, null);
+            return;
+        }
+        if (_listener is not null) await RunOwnerCommandAsync($"{command} {member.Ip}");
+        else if (_myRole == "管理员") await SendAdminCommandAsync($"{command} {member.Ip}");
+        else AddMessage("系统", "只有房主或管理员可以管理成员。", null, null);
     }
 
-    private void ShowBanList_Click(object sender, RoutedEventArgs e)
+    private async void ToggleAdmin_Click(object sender, RoutedEventArgs e)
     {
-        if (_listener is null) { AddMessage("系统", "只有房主可以查看封禁列表。", null, null); return; }
-        BanRecord[] records;
+        if (_listener is null || MembersList.SelectedItem is not RoomMember member) return;
+        if (member.Role == "创建者") return;
+        await SetAdminAsync(member, member.Role != "管理员");
+    }
+
+    private async Task SetAdminAsync(RoomMember member, bool makeAdmin)
+    {
         lock (_peerLock)
         {
-            records = _bannedNames.Select(n => new BanRecord(n, "用户封禁"))
-                .Concat(_bannedIps.Select(ip => new BanRecord(ip, _ipBannedIps.Contains(ip) ? "IP 封禁" : "IP 封禁")))
+            if (makeAdmin)
+            {
+                _adminNames.Add(member.Name);
+                _adminIps.Add(member.Ip);
+            }
+            else
+            {
+                _adminNames.Remove(member.Name);
+                _adminIps.Remove(member.Ip);
+            }
+        }
+        var role = makeAdmin ? "管理员" : "访客";
+        var index = _members.IndexOf(member);
+        if (index >= 0) _members[index] = member with { Role = role };
+        var notice = makeAdmin ? $"已设置 {member.Name} 为管理员。" : $"已取消 {member.Name} 的管理员权限。";
+        AddMessage("系统", notice, null, null);
+        AppLog.Write(notice);
+        await BroadcastAsync(new RoomPacket
+        {
+            Type = "member-role", Room = _roomName, Sender = member.Name, SenderIp = member.Ip, SenderRole = role
+        }, _shutdown.Token);
+    }
+
+    private string RoleOf(Peer peer)
+    {
+        lock (_peerLock)
+            return _adminNames.Contains(peer.Name) || _adminIps.Contains(peer.Ip) ? "管理员" : "访客";
+    }
+
+    private bool IsPeerAdmin(Peer peer)
+    {
+        lock (_peerLock)
+            return _adminNames.Contains(peer.Name) || _adminIps.Contains(peer.Ip);
+    }
+
+    private async Task HandleAdminPacketAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
+    {
+        if (!IsPeerAdmin(peer))
+        {
+            await SendPeerPacketAsync(peer, new RoomPacket { Type = "admin-result", Text = "您没有管理员权限。" }, cancellationToken);
+            return;
+        }
+        switch (packet.Type)
+        {
+            case "admin-command":
+                var command = packet.Text?.Trim() ?? string.Empty;
+                var result = command.Length == 0
+                    ? "指令不能为空。"
+                    : await RunOwnerCommandAsync(command, fromAdmin: true, requesterName: peer.Name);
+                await SendPeerPacketAsync(peer, new RoomPacket { Type = "admin-result", Text = result }, cancellationToken);
+                break;
+            case "admin-ban-list-request":
+                var records = BuildBanRecords();
+                await SendPeerPacketAsync(peer, new RoomPacket
+                {
+                    Type = "admin-ban-list", Text = JsonSerializer.Serialize(records)
+                }, cancellationToken);
+                break;
+        }
+    }
+
+    private BanRecord[] BuildBanRecords()
+    {
+        lock (_peerLock)
+        {
+            return _bannedNames.Select(name => new BanRecord(name, "用户封禁"))
+                .Concat(_bannedIps.Select(ip => new BanRecord(ip, "IP 封禁")))
                 .ToArray();
         }
-        new BanListWindow(records, record => _ = RunOwnerCommandAsync($"{(record.Kind == "用户封禁" ? "/unban" : "/unipban")} {record.Target}")) { Owner = this }.ShowDialog();
+    }
+
+    private async void ShowBanList_Click(object sender, RoutedEventArgs e)
+    {
+        if (_listener is not null)
+        {
+            new BanListWindow(BuildBanRecords(),
+                record => _ = RunOwnerCommandAsync($"{(record.Kind == "用户封禁" ? "/unban" : "/unipban")} {record.Target}"))
+            { Owner = this }.ShowDialog();
+            return;
+        }
+        if (_myRole != "管理员")
+        {
+            AddMessage("系统", "只有房主或管理员可以查看封禁列表。", null, null);
+            return;
+        }
+        await WriteUpstreamPacketAsync(new RoomPacket
+        {
+            Type = "admin-ban-list-request", Room = _roomName, Sender = _userName, SenderIp = GetLocalPrivateIpv4()
+        }, _shutdown.Token);
+        AppLog.Write("已向房主请求封禁列表。");
     }
 
     private async void RequestRemoteControl_Click(object sender, RoutedEventArgs e)
@@ -2166,6 +2465,18 @@ public partial class ChatRoomWindow : Window
 
     private void MessageInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (MentionPanel.Visibility == Visibility.Visible)
+        {
+            if (e.Key == Key.Down) { MoveMentionSelection(1); e.Handled = true; return; }
+            if (e.Key == Key.Up) { MoveMentionSelection(-1); e.Handled = true; return; }
+            if (e.Key is Key.Enter or Key.Tab)
+            {
+                if (MentionList.SelectedItem is string candidate) ConfirmMention(candidate);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Escape) { _mentionDismissed = true; HideMentionPopup(); e.Handled = true; return; }
+        }
         if (e.Key == Key.ImeProcessed && e.ImeProcessedKey == Key.Enter) return;
         if (e.Key != Key.Enter) return;
         var isSendShortcut = AppSettings.SendOnEnter
@@ -2173,7 +2484,230 @@ public partial class ChatRoomWindow : Window
             : Keyboard.Modifiers == ModifierKeys.Control;
         e.Handled = true;
         if (isSendShortcut) Send_Click(sender, new RoutedEventArgs());
-        else MessageInput.SelectedText = Environment.NewLine;
+        else MessageInput.CaretPosition.InsertLineBreak();
+    }
+
+    private void MessageInput_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _mentionDismissed = false;
+        if (_suppressMentionSuggestions) return;
+        UpdateMentionSuggestions();
+    }
+
+    private void MessageInput_SelectionChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressMentionSuggestions || _mentionDismissed) return;
+        UpdateMentionSuggestions();
+    }
+
+    private void MessageInput_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (MentionPanel.IsKeyboardFocusWithin) return;
+        HideMentionPopup();
+    }
+
+    private void MoveMentionSelection(int delta)
+    {
+        if (MentionList.Items.Count == 0) return;
+        var index = MentionList.SelectedIndex + delta;
+        if (index < 0) index = MentionList.Items.Count - 1;
+        else if (index >= MentionList.Items.Count) index = 0;
+        MentionList.SelectedIndex = index;
+        MentionList.ScrollIntoView(MentionList.SelectedItem);
+    }
+
+    private void UpdateMentionSuggestions()
+    {
+        var caret = MessageInput.CaretPosition;
+        var paragraph = caret?.Paragraph;
+        if (paragraph is null) { HideMentionPopup(); return; }
+        var before = new TextRange(paragraph.ContentStart, caret).Text.TrimEnd('\r', '\n');
+        var at = before.LastIndexOf('@');
+        if (at < 0) { HideMentionPopup(); return; }
+        var fragment = before[(at + 1)..];
+        if (fragment.Contains(' ') || fragment.Contains('\r') || fragment.Contains('\n')) { HideMentionPopup(); return; }
+        var candidates = _members
+            .Where(member => !string.Equals(member.Name, _userName, StringComparison.OrdinalIgnoreCase))
+            .Select(member => member.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Where(name => name.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToArray();
+        if (candidates.Length == 0) { HideMentionPopup(); return; }
+        _mentionFragmentStart = paragraph.ContentStart.GetPositionAtOffset(at);
+        if (_mentionFragmentStart is null) { HideMentionPopup(); return; }
+        MentionList.ItemsSource = candidates;
+        MentionList.SelectedIndex = 0;
+        MentionPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideMentionPopup()
+    {
+        MentionPanel.Visibility = Visibility.Collapsed;
+        _mentionFragmentStart = null;
+    }
+
+    private void MentionList_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (ItemsControl.ContainerFromElement(MentionList, source) is not ListBoxItem { DataContext: string name }) return;
+        ConfirmMention(name);
+    }
+
+    private void ConfirmMention(string name)
+    {
+        var start = _mentionFragmentStart;
+        _mentionDismissed = true;
+        HideMentionPopup();
+        var caret = MessageInput.CaretPosition;
+        if (start is null || caret is null) return;
+        if (start.CompareTo(caret) > 0) return;
+        var range = new TextRange(start, caret) { Text = "@" + name + " " };
+        var mentionEnd = range.Start.GetPositionAtOffset(1 + name.Length) ?? range.End;
+        new TextRange(range.Start, mentionEnd).ApplyPropertyValue(TextElement.ForegroundProperty, MentionForeground);
+        MessageInput.CaretPosition = range.End;
+        MessageInput.Focus();
+    }
+
+    private void InsertMentionAtCaret(string name)
+    {
+        var caret = MessageInput.CaretPosition;
+        if (caret is null) return;
+        var insertion = new TextRange(caret, caret) { Text = "@" + name + " " };
+        var mentionEnd = insertion.Start.GetPositionAtOffset(1 + name.Length) ?? insertion.End;
+        new TextRange(insertion.Start, mentionEnd).ApplyPropertyValue(TextElement.ForegroundProperty, MentionForeground);
+        MessageInput.CaretPosition = insertion.End;
+        MessageInput.Focus();
+    }
+
+    private void MentionMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (MembersList.SelectedItem is not RoomMember member) return;
+        InsertMentionAtCaret(member.Name);
+        HideMentionPopup();
+    }
+
+    private void CopyMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { DataContext: ChatMessage message }) return;
+        CopyToClipboard(message.Text, "消息已复制到剪贴板。", "消息");
+    }
+
+    private void CopyMemberName_Click(object sender, RoutedEventArgs e)
+    {
+        if (MembersList.SelectedItem is not RoomMember member) return;
+        CopyToClipboard(member.Name, $"已复制用户名：{member.Name}", "用户名");
+    }
+
+    private void CopyMemberIp_Click(object sender, RoutedEventArgs e)
+    {
+        if (MembersList.SelectedItem is not RoomMember member) return;
+        CopyToClipboard(member.Ip, $"已复制 IP：{member.Ip}", "IP");
+    }
+
+    /// <summary>
+    /// 剪贴板经常被其他程序短暂占用，而 WPF 的 Clipboard 走 OLE 通道在部分机器上会一直失败；
+    /// 这里改用 Win32 剪贴板 API 写文本，并在独立线程里重试，避免阻塞界面。
+    /// </summary>
+    private void CopyToClipboard(string text, string successMessage, string label)
+    {
+        var thread = new Thread(() =>
+        {
+            var copied = TrySetClipboardText(text);
+            void Report()
+            {
+                if (copied) AddMessage("系统", successMessage, null, null);
+                else
+                {
+                    AppLog.Write($"复制{label}失败：剪贴板被其他程序占用。");
+                    AddMessage("系统", "复制失败：剪贴板正被其他程序占用，请稍后重试。", null, null);
+                }
+            }
+            if (Dispatcher.HasShutdownStarted) return;
+            _ = Dispatcher.BeginInvoke(Report);
+        })
+        { IsBackground = true, Name = "LanChatClipboard" };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private const uint CfUnicodeText = 13;
+    private const uint GmemMoveable = 0x0002;
+
+    private static bool TrySetClipboardText(string text)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (TryWriteClipboardText(text)) return true;
+            Thread.Sleep(120);
+        }
+        return false;
+    }
+
+    private static bool TryWriteClipboardText(string text)
+    {
+        if (!OpenClipboard(IntPtr.Zero)) return false;
+        try
+        {
+            if (!EmptyClipboard()) return false;
+            var bytes = new byte[(text.Length + 1) * sizeof(char)];
+            Encoding.Unicode.GetBytes(text, 0, text.Length, bytes, 0);
+            var handle = GlobalAlloc(GmemMoveable, (UIntPtr)bytes.Length);
+            if (handle == IntPtr.Zero) return false;
+            var target = GlobalLock(handle);
+            if (target == IntPtr.Zero)
+            {
+                GlobalFree(handle);
+                return false;
+            }
+            try { Marshal.Copy(bytes, 0, target, bytes.Length); }
+            finally { GlobalUnlock(handle); }
+            if (SetClipboardData(CfUnicodeText, handle) == IntPtr.Zero)
+            {
+                GlobalFree(handle);
+                return false;
+            }
+            return true;
+        }
+        finally { CloseClipboard(); }
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr owner);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetClipboardData(uint format, IntPtr memory);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalFree(IntPtr memory);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr memory);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr memory);
+
+    private void ReplyMessage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { DataContext: ChatMessage message }) return;
+        var author = string.IsNullOrWhiteSpace(message.Author) ? message.Sender : message.Author;
+        _replySender = author;
+        _replyText = message.Text;
+        ReplySenderText.Text = $"{author}：";
+        ReplyPreviewText.Text = message.Text;
+        ReplyBar.Visibility = Visibility.Visible;
+        InsertMentionAtCaret(author);
+        AppLog.Write($"正在回复 {author} 的消息。");
     }
 
     private void AddPacket(RoomPacket packet, byte[]? attachmentData = null)
@@ -2203,18 +2737,45 @@ public partial class ChatRoomWindow : Window
             _ => packet.Text ?? string.Empty
         };
         var sender = packet.Type == "system" ? "系统" : packet.Sender ?? "访客";
+        var author = packet.Sender ?? "访客";
         if (packet.Type is "text" or "file" or "image")
             sender += $" · {packet.SenderRole ?? "访客"}";
         if (!string.IsNullOrWhiteSpace(packet.SenderIp)) sender += $" · {packet.SenderIp}";
-        AddMessage(sender, text, packet.Type is "file" or "image" ? packet.FileName : null, thumbnail, attachmentData, packet.MimeType);
+        AddMessage(sender, text, packet.Type is "file" or "image" ? packet.FileName : null, thumbnail, attachmentData,
+            packet.MimeType, packet.Type == "system" ? null : author, packet.ReplySender, packet.ReplyText);
         if (packet.Type is "file" or "image") AppLog.Write($"附件进入收件列表：{packet.Type} · {packet.FileName ?? "(未命名)"} · 来自 {sender}。");
+        if (packet.Type == "text" && !string.Equals(packet.Sender, _userName, StringComparison.OrdinalIgnoreCase) && MentionsUser(packet.Text, _userName))
+        {
+            AppLog.Write($"收到 {author} 的 @ 提醒。");
+            ToastNotifier.ShowMention(author);
+        }
         MessageScroll.ScrollToEnd();
     }
 
-    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, byte[]? data = null, string? mimeType = null)
+    private static bool MentionsUser(string? text, string userName)
     {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(userName)) return false;
+        var token = "@" + userName;
+        var index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+        while (index >= 0)
+        {
+            var end = index + token.Length;
+            if (end >= text.Length || !char.IsLetterOrDigit(text[end]) && text[end] != '_') return true;
+            index = text.IndexOf(token, index + 1, StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
+    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, byte[]? data = null, string? mimeType = null, string? author = null, string? replySender = null, string? replyText = null)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+                AddMessage(sender, text, attachment, thumbnail, data, mimeType, author, replySender, replyText)));
+            return;
+        }
         var displayText = attachment is null ? text : text;
-        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, data, mimeType));
+        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, data, mimeType, author, replySender, replyText));
         MessageScroll.ScrollToEnd();
     }
 
@@ -2343,14 +2904,18 @@ public partial class ChatRoomWindow : Window
         public bool PasswordRequired { get; set; }
         public string? Name { get; set; }
         public string? HostAddress { get; set; }
+        public string? ReplySender { get; set; }
+        public string? ReplyText { get; set; }
     }
 
-    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, byte[]? Data, string? MimeType)
+    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, byte[]? Data, string? MimeType, string? Author = null, string? QuoteSender = null, string? QuoteText = null)
     {
         public bool IsSystem => Sender == "系统";
         public string AttachmentLabel => Attachment is null ? string.Empty : $"📎 {Attachment}";
         public Visibility ThumbnailVisibility => Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
         public Visibility DownloadVisibility => Attachment is null ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility QuoteVisibility => string.IsNullOrEmpty(QuoteText) ? Visibility.Collapsed : Visibility.Visible;
+        public string QuoteSenderLabel => QuoteSender ?? string.Empty;
     }
 
     private sealed class AttachmentAccumulator

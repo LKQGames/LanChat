@@ -83,6 +83,16 @@
             <Setter Property="CaretBrush" Value="#8DADFF" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
+        <Style TargetType="RichTextBox">
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />
+            <Setter Property="Background" Value="#11141B" />
+            <Setter Property="BorderBrush" Value="#3A3F4B" />
+            <Setter Property="CaretBrush" Value="#8DADFF" />
+            <Setter Property="SelectionBrush" Value="#3E5C96" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
         <Style TargetType="PasswordBox">
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />
             <Setter Property="Background" Value="#11141B" />
@@ -240,11 +250,51 @@
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
             <Setter Property="BorderBrush" Value="#343946" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ItemsPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="MenuItem">
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Root" Background="Transparent" CornerRadius="8" Margin="4,1"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="#2E3D59" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Height="1" Margin="14,5" Background="#3A4050" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="DataGrid">
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />

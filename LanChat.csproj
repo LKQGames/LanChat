@@ -6,8 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseAppHost>true</UseAppHost>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FFmpegDotNet.bin.winx64" Version="9.0.2" ExcludeAssets="compile;runtime;contentFiles;analyzers" />
     <PackageReference Include="FFmpegDotNet._AutoGen" Version="9.0.1" ExcludeAssets="all" />

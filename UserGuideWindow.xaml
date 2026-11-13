@@ -45,6 +45,7 @@
                         </TextBlock>
                     </Border>
                     <TextBlock Text="聊天窗口的“成员列表”可折叠显示房间成员，并通过右键菜单复制用户名/IP 或执行禁言、踢出、封禁操作。“封禁列表”可查看当前房间的封禁项并解除用户或 IP 封禁。成员和封禁信息仅在房间运行期间有效。" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <TextBlock Text="房主可以在成员列表右键“设为管理员”，该成员的访客头衔会变为管理员并获得与房主相同的管理权限：禁言、踢出、封禁、查看封禁列表（已设为管理员的成员，菜单会变为“取消管理员”）。管理员只能管理访客，不能对房主、其他管理员和自己进行管理操作。" TextWrapping="Wrap" Margin="0,7,0,0" />
                     <TextBlock Text="禁言和封禁仅在当前房间运行期间有效。房间关闭后会清除。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,9,0,0" />
 
                     <TextBlock Text="10. 房间成员身份与移出提示" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
@@ -56,6 +57,9 @@
                         <TextBlock Text="首次被控时，Windows 可能弹出防火墙询问，请允许 RustDesk 通过专用网络；在可信任局域网中只需同意一次。被控端已手动开启“直接 IP 访问”时，LanChat 会直接复用该设置，不会改动它。RustDesk 官方说明直接 IP 模式未加密；仅在可信任的局域网使用，避免传输敏感内容。若不愿接受未加密直连，请勿继续连接。" TextWrapping="Wrap" Foreground="#FFD180" FontSize="12" />
                     </Border>
                     <TextBlock Text="RustDesk 是单独启动的原版客户端，不是嵌入 LanChat 窗口的控件。按 AGPL-3.0 分发；许可证全文与对应的 1.5.3 源码压缩包均内置于本程序，可通过下方按钮导出。版本及源码：https://github.com/rustdesk/rustdesk/tree/1.5.3。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" />
+
+                    <TextBlock Text="12. 艾特与引用回复" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="在输入框输入 @ 会自动列出房间成员，用上下键选择后按 Enter（或直接用鼠标点击）即可插入蓝色的 @用户名；也可以在成员列表右键选择“艾特 TA”直接插入。被艾特的成员会收到 Windows 通知提示“您被 xxx 艾特了”。在收到的消息上点右键，可以选择“复制消息”或“回复消息”；回复时会自动引用原消息并在输入框补上 @对方，发送后引用内容显示在消息上方。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
                     <TextBlock Text="6. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="每个页面都可单独点击“📌 置顶”，让当前窗口保持在其他窗口上方；取消勾选即可恢复普通层级。" TextWrapping="Wrap" Margin="0,7,0,0" />
