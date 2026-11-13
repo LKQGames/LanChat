@@ -23,20 +23,32 @@ internal static class AppLog
 
     public static void SaveRuntimeLog()
     {
-        try
+        var fileName = $"LanChat-runtime-{StartedAt:yyyyMMdd-HHmmss}.txt";
+        string[] lines;
+        lock (Sync)
         {
-            var path = Path.Combine(AppContext.BaseDirectory, $"LanChat-runtime-{StartedAt:yyyyMMdd-HHmmss}.txt");
-            string[] lines;
-            lock (Sync)
+            History.Add($"{DateTime.Now:HH:mm:ss}  程序退出。");
+            lines = History.ToArray();
+        }
+        foreach (var directory in GetLogDirectories())
+        {
+            try
             {
-                History.Add($"{DateTime.Now:HH:mm:ss}  程序退出。");
-                lines = History.ToArray();
+                Directory.CreateDirectory(directory);
+                File.WriteAllLines(Path.Combine(directory, fileName), lines, new System.Text.UTF8Encoding(true));
+                return;
             }
-            File.WriteAllLines(path, lines, new System.Text.UTF8Encoding(true));
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // 程序目录不可写时退回到用户缓存目录；两种情况都失败也不影响退出。
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
-        {
-            // Runtime logging is intentionally silent; never block application shutdown.
-        }
+    }
+
+    /// <summary>优先写入程序目录下的 logs 文件夹，不可写时退回 LocalAppData。</summary>
+    private static IEnumerable<string> GetLogDirectories()
+    {
+        yield return Path.Combine(AppContext.BaseDirectory, "logs");
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LanChat", "logs");
     }
 }

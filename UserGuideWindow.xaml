@@ -71,7 +71,7 @@
                     <TextBlock Text="在主页打开“运行日志”开关，可显示独立日志窗口并实时查看房间创建与加入、聊天消息、附件操作和连接状态。关闭开关或日志窗口即可停止显示。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
                     <TextBlock Text="9. 自动保存运行日志" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
-                    <TextBlock Text="程序从启动时会在后台持续记录操作事件、实时房间/连接状态、监听与发现活动、消息和附件收发、异常信息及周期状态快照。退出时会在程序所在目录生成独立的 LanChat-runtime-时间戳.txt 文件；此文件与用户通过“保存日志”主动导出的文件分开。" TextWrapping="Wrap" Margin="0,7,0,0" />
+                    <TextBlock Text="程序从启动时会在后台持续记录操作事件、实时房间/连接状态、监听与发现活动、消息和附件收发、异常信息及周期状态快照。退出时会在程序所在目录下的 logs 文件夹生成独立的 LanChat-runtime-时间戳.txt 文件；此文件与用户通过“保存日志”主动导出的文件分开。" TextWrapping="Wrap" Margin="0,7,0,0" />
                 </StackPanel>
             </ScrollViewer>
         </Border>
