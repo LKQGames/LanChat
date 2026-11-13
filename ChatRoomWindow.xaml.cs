@@ -56,6 +56,7 @@ public partial class ChatRoomWindow : Window
     private readonly HashSet<string> _adminNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _adminIps = new(StringComparer.OrdinalIgnoreCase);
     private string _myRole = "访客";
+    private string _muteActor = "房主";
     private RoomMember? _contextMember;
     private readonly ObservableCollection<ChatMessage> _messages = new();
     private readonly ObservableCollection<RoomMember> _members = new();
@@ -338,8 +339,9 @@ public partial class ChatRoomWindow : Window
                 if (packet.Type == "mute-state")
                 {
                     _isMuted = packet.Text == "muted";
-                    AppLog.Write(_isMuted ? "运行状态：本账号已被房主禁言。" : "运行状态：本账号禁言已解除。");
-                    await Dispatcher.InvokeAsync(() => AddMessage("系统", _isMuted ? "您已被房主禁言。" : "您的禁言已解除。", null, null));
+                    _muteActor = packet.SenderRole == "管理员" ? "管理员" : "房主";
+                    AppLog.Write(_isMuted ? $"运行状态：本账号已被{_muteActor}禁言。" : "运行状态：本账号禁言已解除。");
+                    await Dispatcher.InvokeAsync(() => AddMessage("系统", _isMuted ? $"您已被{_muteActor}禁言。" : "您的禁言已解除。", null, null));
                     continue;
                 }
                 if (packet.Type is "member-joined" or "member-left")
@@ -676,7 +678,7 @@ public partial class ChatRoomWindow : Window
         if (_upstreamStream is not null && _isMuted)
         {
             AppLog.Write($"已拦截禁言访客 {_userName} 的消息发送操作。");
-            AddMessage("系统", "您已被房主禁言，暂时无法发送消息或附件。", null, null);
+            AddMessage("系统", $"您已被{_muteActor}禁言，暂时无法发送消息或附件。", null, null);
             return;
         }
         if (text.StartsWith('/'))
@@ -837,7 +839,15 @@ public partial class ChatRoomWindow : Window
                 try
                 {
                     await peer.WriteLock.WaitAsync(_shutdown.Token);
-                    try { await WritePacketAsync(peer.Stream, new RoomPacket { Type = "mute-state", Text = muted ? "muted" : "unmuted" }, _shutdown.Token); }
+                    try
+                    {
+                        await WritePacketAsync(peer.Stream, new RoomPacket
+                        {
+                            Type = "mute-state", Text = muted ? "muted" : "unmuted",
+                            Sender = fromAdmin ? requesterName : _userName,
+                            SenderRole = fromAdmin ? "管理员" : "创建者"
+                        }, _shutdown.Token);
+                    }
                     finally { peer.WriteLock.Release(); }
                 }
                 catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
@@ -870,7 +880,11 @@ public partial class ChatRoomWindow : Window
         Report(report);
         if (command == "/mute")
         {
-            await BroadcastAsync(new RoomPacket { Type = "system", Room = _roomName, Text = $"房主更新了 {target} 的发言权限。" }, _shutdown.Token);
+            await BroadcastAsync(new RoomPacket
+            {
+                Type = "system", Room = _roomName,
+                Text = $"{(fromAdmin ? "管理员" : "房主")}更新了 {target} 的发言权限。"
+            }, _shutdown.Token);
         }
         return report;
     }
@@ -2222,7 +2236,7 @@ public partial class ChatRoomWindow : Window
         if (_upstreamStream is not null && _isMuted)
         {
             AppLog.Write($"已拦截禁言访客 {_userName} 的附件发送操作。");
-            AddMessage("系统", "您已被房主禁言，暂时无法发送消息或附件。", null, null);
+            AddMessage("系统", $"您已被{_muteActor}禁言，暂时无法发送消息或附件。", null, null);
             return;
         }
         var files = paths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
