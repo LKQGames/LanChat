@@ -41,11 +41,8 @@ public partial class ChatRoomWindow : Window
     private readonly ConcurrentDictionary<string, RemoteSession> _localRemoteSessions = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _remoteCaptures = new();
     private readonly ConcurrentDictionary<string, (string Name, string Ip)> _outgoingRemoteSessions = new();
-    private readonly ConcurrentDictionary<string, RemoteDesktopWindow> _remoteViewers = new();
     private readonly ConcurrentDictionary<string, Process> _rustDeskProcesses = new();
     private readonly ConcurrentDictionary<string, string> _rustDeskIds = new();
-    private readonly ConcurrentDictionary<string, FfmpegH264Decoder> _remoteDecoders = new();
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _remoteCodecNegotiations = new();
     private readonly HashSet<string> _mutedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _mutedIps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _bannedNames = new(StringComparer.OrdinalIgnoreCase);
@@ -88,17 +85,6 @@ public partial class ChatRoomWindow : Window
     private const uint KeyEventKeyUp = 0x0002;
     private const ushort VirtualKeyLeftWindows = 0x5B;
     private const ushort VirtualKeyPeriod = 0xBE;
-    private const uint InputTypeMouse = 0;
-    private const uint MouseMoveFlag = 0x0001;
-    private const uint MouseLeftDown = 0x0002;
-    private const uint MouseLeftUp = 0x0004;
-    private const uint MouseRightDown = 0x0008;
-    private const uint MouseRightUp = 0x0010;
-    private const uint MouseMiddleDown = 0x0020;
-    private const uint MouseMiddleUp = 0x0040;
-    private const uint MouseWheelFlag = 0x0800;
-    private const uint MouseAbsolute = 0x8000;
-    private const uint MouseVirtualDesk = 0x4000;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint inputCount, NativeInput[] inputs, int inputSize);
@@ -120,7 +106,6 @@ public partial class ChatRoomWindow : Window
     private struct InputUnion
     {
         [FieldOffset(0)] public KeyboardInput Keyboard;
-        [FieldOffset(0)] public MouseInput Mouse;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -128,17 +113,6 @@ public partial class ChatRoomWindow : Window
     {
         public ushort VirtualKey;
         public ushort ScanCode;
-        public uint Flags;
-        public uint Time;
-        public UIntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MouseInput
-    {
-        public int Dx;
-        public int Dy;
-        public uint MouseData;
         public uint Flags;
         public uint Time;
         public UIntPtr ExtraInfo;
@@ -397,7 +371,7 @@ public partial class ChatRoomWindow : Window
             {
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    var sessions = _localRemoteSessions.Keys.Concat(_remoteCaptures.Keys).Concat(_remoteViewers.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
+                    var sessions = _localRemoteSessions.Keys.Concat(_remoteCaptures.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
                     foreach (var sessionId in sessions) EndRemoteSessionLocally(sessionId);
                     if (!cancellationToken.IsCancellationRequested)
                     {
@@ -423,7 +397,7 @@ public partial class ChatRoomWindow : Window
                 {
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        var sessions = _localRemoteSessions.Keys.Concat(_remoteCaptures.Keys).Concat(_remoteViewers.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
+                        var sessions = _localRemoteSessions.Keys.Concat(_remoteCaptures.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
                         foreach (var sessionId in sessions) EndRemoteSessionLocally(sessionId);
                         AddMessage("系统", "与房间主机的连接超时，远程控制会话已结束。", null, null);
                         RoomSubtitle.Text = "连接已超时";
@@ -1243,57 +1217,6 @@ public partial class ChatRoomWindow : Window
             case "remote-response":
                 await HandleRemoteResponseFromPeerAsync(peer, packet, cancellationToken);
                 break;
-            case "remote-frame":
-                await HandleRemoteFrameFromPeerAsync(peer, packet, cancellationToken);
-                break;
-            case "remote-codec-offer":
-                if (_remoteSessions.TryGetValue(packet.SessionId, out var offerSession) &&
-                    offerSession.Accepted && ReferenceEquals(offerSession.TargetPeer, peer))
-                {
-                    if (offerSession.RequesterIsLocal)
-                    {
-                        var canDecode = await AcceptH264CodecOfferAsync(offerSession.SessionId, offerSession.TargetName);
-                        await SendPeerPacketAsync(peer, new RoomPacket
-                        {
-                            Type = canDecode ? "remote-codec-accepted" : "remote-codec-rejected",
-                            SessionId = offerSession.SessionId,
-                            Codec = "h264-mf"
-                        }, cancellationToken);
-                    }
-                    else if (offerSession.RequesterPeer is not null)
-                        await SendPeerPacketAsync(offerSession.RequesterPeer, packet, cancellationToken);
-                }
-                break;
-            case "remote-codec-accepted":
-            case "remote-codec-rejected":
-                if (_remoteSessions.TryGetValue(packet.SessionId, out var codecSession) &&
-                    ReferenceEquals(codecSession.RequesterPeer, peer))
-                {
-                    if (codecSession.TargetIsLocal && _remoteCodecNegotiations.TryGetValue(codecSession.SessionId, out var negotiation))
-                        negotiation.TrySetResult(packet.Type == "remote-codec-accepted");
-                    else if (codecSession.TargetPeer is not null)
-                        await SendPeerPacketAsync(codecSession.TargetPeer, packet, cancellationToken);
-                }
-                break;
-            case "remote-video-data":
-                if (_remoteSessions.TryGetValue(packet.SessionId, out var videoSession) &&
-                    videoSession.Accepted && ReferenceEquals(videoSession.TargetPeer, peer) && packet.Data is not null)
-                {
-                    byte[] encoded;
-                    try { encoded = Convert.FromBase64String(packet.Data); }
-                    catch (FormatException) { break; }
-                    if (videoSession.RequesterIsLocal && _remoteDecoders.TryGetValue(videoSession.SessionId, out var decoder))
-                    {
-                        if (!decoder.QueuePacket(encoded))
-                            await StopRemoteSessionForDecoderFailureAsync(videoSession.SessionId);
-                    }
-                    else if (videoSession.RequesterPeer is not null)
-                        await SendPeerPacketAsync(videoSession.RequesterPeer, packet, cancellationToken);
-                }
-                break;
-            case "remote-input":
-                await HandleRemoteInputFromPeerAsync(peer, packet, cancellationToken);
-                break;
             case "remote-stop":
                 await HandleRemoteStopFromPeerAsync(peer, packet, cancellationToken);
                 break;
@@ -1409,35 +1332,6 @@ public partial class ChatRoomWindow : Window
         AppLog.Write(accepted ? $"远程控制申请已接受，会话 {session.SessionId}。" : $"远程控制申请被拒绝，会话 {session.SessionId}。");
     }
 
-    private async Task HandleRemoteFrameFromPeerAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
-    {
-        if (!_remoteSessions.TryGetValue(packet.SessionId!, out var session) || !session.Accepted || !ReferenceEquals(session.TargetPeer, peer) || packet.Data is null) return;
-        if (session.RequesterIsLocal)
-        {
-            try
-            {
-                var frame = Convert.FromBase64String(packet.Data);
-                await Dispatcher.InvokeAsync(() => SetRemoteFrame(session.SessionId, frame));
-            }
-            catch (FormatException) { }
-        }
-        else if (session.RequesterPeer is not null)
-            await SendPeerPacketAsync(session.RequesterPeer, packet, cancellationToken);
-    }
-
-    private async Task HandleRemoteInputFromPeerAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
-    {
-        if (!_remoteSessions.TryGetValue(packet.SessionId!, out var session) || !session.Accepted || !ReferenceEquals(session.RequesterPeer, peer)) return;
-        if (session.TargetIsLocal)
-        {
-            if (!_remoteCaptures.ContainsKey(session.SessionId)) return;
-            var input = ToRemoteInput(packet);
-            await Dispatcher.InvokeAsync(() => ApplyRemoteInput(input));
-        }
-        else if (session.TargetPeer is not null)
-            await SendPeerPacketAsync(session.TargetPeer, packet, cancellationToken);
-    }
-
     private async Task HandleRemoteStopFromPeerAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
     {
         if (!_remoteSessions.TryGetValue(packet.SessionId!, out var session)) return;
@@ -1494,22 +1388,6 @@ public partial class ChatRoomWindow : Window
                 });
                 _ = LaunchRustDeskConnectionAsync(packet.SessionId, packet.Sender ?? "远程用户", packet.SenderIp ?? string.Empty, packet.RustDeskId);
                 break;
-            case "remote-codec-offer":
-            {
-                var canDecode = await AcceptH264CodecOfferAsync(packet.SessionId, packet.Sender ?? "远程用户");
-                await WriteUpstreamPacketAsync(new RoomPacket
-                {
-                    Type = canDecode ? "remote-codec-accepted" : "remote-codec-rejected",
-                    SessionId = packet.SessionId,
-                    Codec = "h264-mf"
-                }, cancellationToken);
-                break;
-            }
-            case "remote-codec-accepted":
-            case "remote-codec-rejected":
-                if (_remoteCodecNegotiations.TryGetValue(packet.SessionId, out var codecNegotiation))
-                    codecNegotiation.TrySetResult(packet.Type == "remote-codec-accepted");
-                break;
             case "remote-declined":
                 ReleaseControllerSession(packet.SessionId);
                 await Dispatcher.InvokeAsync(() => MessageBox.Show(this, packet.Text ?? "对方已拒绝", "远程控制", MessageBoxButton.OK, MessageBoxImage.Information));
@@ -1518,35 +1396,6 @@ public partial class ChatRoomWindow : Window
             case "remote-error":
                 ReleaseControllerSession(packet.SessionId);
                 await Dispatcher.InvokeAsync(() => MessageBox.Show(this, packet.Text ?? "远程控制申请失败。", "远程控制", MessageBoxButton.OK, MessageBoxImage.Information));
-                break;
-            case "remote-frame":
-                if (packet.Data is not null)
-                {
-                    try
-                    {
-                        var frame = Convert.FromBase64String(packet.Data);
-                        await Dispatcher.InvokeAsync(() => SetRemoteFrame(packet.SessionId, frame));
-                    }
-                    catch (FormatException) { }
-                }
-                break;
-            case "remote-video-data":
-                if (packet.Data is not null && _remoteDecoders.TryGetValue(packet.SessionId, out var h264Decoder))
-                {
-                    try
-                    {
-                        if (!h264Decoder.QueuePacket(Convert.FromBase64String(packet.Data)))
-                            await StopRemoteSessionForDecoderFailureAsync(packet.SessionId);
-                    }
-                    catch (FormatException) { }
-                }
-                break;
-            case "remote-input":
-                if (_remoteCaptures.ContainsKey(packet.SessionId))
-                {
-                    var input = ToRemoteInput(packet);
-                    await Dispatcher.InvokeAsync(() => ApplyRemoteInput(input));
-                }
                 break;
             case "remote-stop":
                 await Dispatcher.InvokeAsync(() =>
@@ -1609,72 +1458,6 @@ public partial class ChatRoomWindow : Window
             RustDeskId = _rustDeskIds.GetValueOrDefault(sessionId)
         }, _shutdown.Token);
         AddMessage("系统", $"已接受 {requesterName} 的远程控制申请，RustDesk 正在等待对方连接。", null, null);
-    }
-
-    private void OpenRemoteViewer(string sessionId, string targetName)
-    {
-        if (_remoteViewers.ContainsKey(sessionId)) return;
-        var viewer = new RemoteDesktopWindow(targetName,
-            input => _ = SendRemoteInputAsync(sessionId, input),
-            () =>
-            {
-                _remoteViewers.TryRemove(sessionId, out _);
-                _ = SendRemoteStopAsync(sessionId);
-            }) { Owner = this };
-        _remoteViewers[sessionId] = viewer;
-        viewer.Show();
-    }
-
-    private async Task<bool> AcceptH264CodecOfferAsync(string sessionId, string targetName)
-    {
-        if (_remoteDecoders.ContainsKey(sessionId)) return true;
-        try
-        {
-            await Dispatcher.InvokeAsync(() => OpenRemoteViewer(sessionId, targetName));
-            var decoder = FfmpegH264Decoder.Start(frame =>
-                _ = Dispatcher.BeginInvoke(() => SetRemoteFrame(sessionId, frame)));
-            if (_remoteDecoders.TryAdd(sessionId, decoder))
-            {
-                AppLog.Write($"远控会话 {sessionId} 已协商 H.264 解码。");
-                return true;
-            }
-            await decoder.DisposeAsync();
-            return _remoteDecoders.ContainsKey(sessionId);
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException)
-        {
-            AppLog.Write($"远控会话 {sessionId} 无法启用 H.264 解码，将回退 JPEG：{ex.Message}");
-            return false;
-        }
-    }
-
-    private void SetRemoteFrame(string sessionId, byte[] frame)
-    {
-        if (_remoteViewers.TryGetValue(sessionId, out var viewer)) viewer.SetFrame(frame);
-    }
-
-    private async Task SendRemoteInputAsync(string sessionId, RemoteControlInput input)
-    {
-        var packet = new RoomPacket
-        {
-            Type = "remote-input", SessionId = sessionId, InputKind = input.Kind, X = input.X, Y = input.Y,
-            Button = input.Button, Delta = input.Delta, VirtualKey = input.VirtualKey, KeyDown = input.KeyDown
-        };
-        try
-        {
-            if (_listener is null) await WriteUpstreamPacketAsync(packet, _shutdown.Token);
-            else if (_remoteSessions.TryGetValue(sessionId, out var session) && session.TargetPeer is not null)
-                await SendPeerPacketAsync(session.TargetPeer, packet, _shutdown.Token);
-        }
-        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
-        { if (!_shutdown.IsCancellationRequested) AppLog.Write($"远程输入发送失败：{ex.Message}"); }
-    }
-
-    private async Task StopRemoteSessionForDecoderFailureAsync(string sessionId)
-    {
-        AppLog.Write($"远控会话 {sessionId} 的 H.264 解码队列过载，正在结束会话以保持控制消息可用。");
-        await Dispatcher.InvokeAsync(() => AddMessage("系统", "远程视频解码速度跟不上，远程控制会话已结束。", null, null));
-        await SendRemoteStopAsync(sessionId);
     }
 
     private async Task<bool> StartRemoteCaptureAsync(string sessionId, string controllerName)
@@ -1917,143 +1700,6 @@ public partial class ChatRoomWindow : Window
         finally { Marshal.FreeHGlobal(table); }
     }
 
-    private async Task RemoteCaptureLoopAsync(string sessionId, Peer? requesterPeer, CancellationToken cancellationToken)
-    {
-        const int targetFps = 10;
-        var frameInterval = TimeSpan.FromMilliseconds(1000d / targetFps);
-        var maxWidth = 1280;
-        var quality = 50;
-        var fastFrames = 0;
-        try
-        {
-            var initialFrame = await Task.Run(() => RemoteDesktopCapture.CaptureBgra(maxWidth), cancellationToken).ConfigureAwait(false);
-            var encoderResult = await FfmpegH264Encoder.TryCreateAsync(
-                initialFrame.Width, initialFrame.Height, initialFrame.Pixels, cancellationToken).ConfigureAwait(false);
-            if (encoderResult is { } h264)
-            {
-                await using var encoder = h264.Encoder;
-                var negotiation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _remoteCodecNegotiations[sessionId] = negotiation;
-                try
-                {
-                    await SendRemotePacketToRequesterAsync(new RoomPacket
-                    {
-                        Type = "remote-codec-offer", SessionId = sessionId, Codec = "h264-mf",
-                        Sender = _userName, SenderIp = GetLocalPrivateIpv4()
-                    }, requesterPeer, cancellationToken).ConfigureAwait(false);
-
-                    var negotiated = false;
-                    try { negotiated = await negotiation.Task.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false); }
-                    catch (TimeoutException) { }
-                    if (negotiated)
-                    {
-                        await SendRemoteVideoDataAsync(sessionId, h264.FirstPacket, requesterPeer, cancellationToken).ConfigureAwait(false);
-                        while (encoder.TryReadPacket(out var bufferedPacket))
-                            await SendRemoteVideoDataAsync(sessionId, bufferedPacket, requesterPeer, cancellationToken).ConfigureAwait(false);
-                        AppLog.Write($"远控会话 {sessionId} 已协商 H.264 编解码，使用 1280px/10 FPS 目标参数。");
-                        while (!cancellationToken.IsCancellationRequested)
-                        {
-                            var timer = Stopwatch.StartNew();
-                            while (encoder.TryReadPacket(out var pendingPacket))
-                                await SendRemoteVideoDataAsync(sessionId, pendingPacket, requesterPeer, cancellationToken).ConfigureAwait(false);
-                            var nextFrame = await Task.Run(() => RemoteDesktopCapture.CaptureBgra(maxWidth), cancellationToken).ConfigureAwait(false);
-                            await encoder.WriteFrameAsync(nextFrame.Pixels, cancellationToken).ConfigureAwait(false);
-                            var packet = await encoder.ReadNextPacketAsync(TimeSpan.FromMilliseconds(500), cancellationToken).ConfigureAwait(false);
-                            if (packet is not null)
-                            {
-                                await SendRemoteVideoDataAsync(sessionId, packet, requesterPeer, cancellationToken).ConfigureAwait(false);
-                                while (encoder.TryReadPacket(out packet))
-                                    await SendRemoteVideoDataAsync(sessionId, packet, requesterPeer, cancellationToken).ConfigureAwait(false);
-                            }
-                            timer.Stop();
-                            var remaining = frameInterval - timer.Elapsed;
-                            if (remaining > TimeSpan.Zero) await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
-                        }
-                        return;
-                    }
-                    AppLog.Write($"远控会话 {sessionId} 的 H.264 协商未成功，改用 JPEG 帧传输。");
-                }
-                finally { _remoteCodecNegotiations.TryRemove(sessionId, out _); }
-            }
-            else AppLog.Write($"远控会话 {sessionId} 无法启动 H.264 编码，将使用 JPEG 帧传输。");
-
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var frameTimer = Stopwatch.StartNew();
-                var jpeg = await Task.Run(() => RemoteDesktopCapture.CaptureJpeg(maxWidth, quality), cancellationToken).ConfigureAwait(false);
-                var frame = new RoomPacket { Type = "remote-frame", SessionId = sessionId, Data = Convert.ToBase64String(jpeg) };
-                if (_listener is null) await WriteUpstreamPacketAsync(frame, cancellationToken).ConfigureAwait(false);
-                else if (requesterPeer is not null) await SendPeerPacketAsync(requesterPeer, frame, cancellationToken).ConfigureAwait(false);
-
-                // Keep the stream responsive by targeting 10 FPS and adapting JPEG
-                // dimensions/quality when capture plus network send cannot keep up.
-                frameTimer.Stop();
-                if (frameTimer.Elapsed > TimeSpan.FromMilliseconds(180))
-                {
-                    var oldWidth = maxWidth;
-                    var oldQuality = quality;
-                    maxWidth = Math.Max(800, maxWidth - 160);
-                    quality = Math.Max(38, quality - 4);
-                    fastFrames = 0;
-                    if (oldWidth != maxWidth || oldQuality != quality)
-                        AppLog.Write($"远控自适应降低画质：{maxWidth}px，JPEG {quality}，单帧 {frameTimer.ElapsedMilliseconds}ms。会话 {sessionId}。");
-                }
-                else if (frameTimer.Elapsed < TimeSpan.FromMilliseconds(85) && (maxWidth < 1280 || quality < 50))
-                {
-                    if (++fastFrames >= 20)
-                    {
-                        maxWidth = Math.Min(1280, maxWidth + 80);
-                        quality = Math.Min(50, quality + 2);
-                        fastFrames = 0;
-                        AppLog.Write($"远控自适应恢复画质：{maxWidth}px，JPEG {quality}。会话 {sessionId}。");
-                    }
-                }
-                else fastFrames = 0;
-
-                var remaining = frameInterval - frameTimer.Elapsed;
-                if (remaining > TimeSpan.Zero) await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            AppLog.Write($"远程屏幕采集/发送失败（{sessionId}）：{ex}");
-            await Dispatcher.InvokeAsync(() => AddMessage("系统", "远程屏幕采集失败，会话已结束。", null, null));
-            await StopLocalRemoteControlAsync(sessionId);
-        }
-    }
-
-    private async Task SendRemotePacketToRequesterAsync(RoomPacket packet, Peer? requesterPeer, CancellationToken cancellationToken)
-    {
-        if (_listener is null) await WriteUpstreamPacketAsync(packet, cancellationToken).ConfigureAwait(false);
-        else if (requesterPeer is not null) await SendPeerPacketAsync(requesterPeer, packet, cancellationToken).ConfigureAwait(false);
-    }
-
-    private Task SendRemoteVideoDataAsync(string sessionId, byte[] data, Peer? requesterPeer, CancellationToken cancellationToken) =>
-        SendRemotePacketToRequesterAsync(new RoomPacket
-        {
-            Type = "remote-video-data", SessionId = sessionId, Codec = "h264-mf", Data = Convert.ToBase64String(data)
-        }, requesterPeer, cancellationToken);
-
-    private async Task StopLocalRemoteControlAsync(string sessionId)
-    {
-        if (!_remoteCaptures.ContainsKey(sessionId)) return;
-        try
-        {
-            if (_listener is null)
-                await WriteUpstreamPacketAsync(new RoomPacket { Type = "remote-stop", SessionId = sessionId }, _shutdown.Token);
-            else if (_remoteSessions.TryGetValue(sessionId, out var session) && session.RequesterPeer is not null)
-            {
-                await SendPeerPacketAsync(session.RequesterPeer, new RoomPacket { Type = "remote-stop", SessionId = sessionId }, _shutdown.Token);
-                _remoteSessions.TryRemove(sessionId, out _);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or OperationCanceledException)
-        { if (!_shutdown.IsCancellationRequested) AppLog.Write($"结束远程会话通知失败：{ex.Message}"); }
-        EndRemoteSessionLocally(sessionId);
-        AppLog.Write($"本机已结束远程控制会话 {sessionId}。");
-    }
-
     private async Task SendRemoteStopAsync(string sessionId)
     {
         try
@@ -2079,9 +1725,6 @@ public partial class ChatRoomWindow : Window
             cancellation.Cancel();
             cancellation.Dispose();
         }
-        if (_remoteCodecNegotiations.TryRemove(sessionId, out var codecNegotiation)) codecNegotiation.TrySetResult(false);
-        if (_remoteDecoders.TryRemove(sessionId, out var decoder)) _ = decoder.DisposeAsync();
-        if (_remoteViewers.TryRemove(sessionId, out var viewer)) viewer.Close();
         if (_rustDeskProcesses.TryRemove(sessionId, out var controllerProcess)) _ = CloseRustDeskProcessAsync(controllerProcess);
         _rustDeskIds.TryRemove(sessionId, out _);
         _localRemoteSessions.TryRemove(sessionId, out _);
@@ -2119,7 +1762,7 @@ public partial class ChatRoomWindow : Window
     private async void StopRemoteControlFromChat_Click(object sender, RoutedEventArgs e)
     {
         foreach (var sessionId in _remoteCaptures.Keys.ToArray())
-            await StopLocalRemoteControlAsync(sessionId);
+            await SendRemoteStopAsync(sessionId);
         foreach (var sessionId in _rustDeskProcesses.Keys.ToArray())
             await SendRemoteStopAsync(sessionId);
         foreach (var sessionId in _outgoingRemoteSessions.Keys.ToArray())
@@ -2137,43 +1780,6 @@ public partial class ChatRoomWindow : Window
         }
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or ObjectDisposedException) { }
         finally { process.Dispose(); }
-    }
-
-    private static RemoteControlInput ToRemoteInput(RoomPacket packet) => new(
-        packet.InputKind ?? string.Empty, packet.X, packet.Y, packet.Button, packet.Delta, packet.VirtualKey, packet.KeyDown);
-
-    private static void ApplyRemoteInput(RemoteControlInput input)
-    {
-        if (input.Kind == "key")
-        {
-            if (input.VirtualKey is <= 0 or > 255) return;
-            SendInput(1, new[] { KeyboardEvent((ushort)input.VirtualKey, input.KeyDown ? 0 : KeyEventKeyUp) }, Marshal.SizeOf<NativeInput>());
-            return;
-        }
-
-        var x = Math.Clamp(input.X, 0, 65535);
-        var y = Math.Clamp(input.Y, 0, 65535);
-        NativeInput Move() => new()
-        {
-            Type = InputTypeMouse,
-            Data = new InputUnion { Mouse = new MouseInput { Dx = x, Dy = y, Flags = MouseMoveFlag | MouseAbsolute | MouseVirtualDesk } }
-        };
-        NativeInput Button(uint flags) => new()
-        {
-            Type = InputTypeMouse,
-            Data = new InputUnion { Mouse = new MouseInput { Flags = flags } }
-        };
-
-        NativeInput[] inputs = input.Kind switch
-        {
-            "mouse-move" => [Move()],
-            "mouse-down" => [Move(), Button(input.Button switch { 0 => MouseLeftDown, 1 => MouseRightDown, 2 => MouseMiddleDown, _ => 0 })],
-            "mouse-up" => [Move(), Button(input.Button switch { 0 => MouseLeftUp, 1 => MouseRightUp, 2 => MouseMiddleUp, _ => 0 })],
-            "mouse-wheel" => [Move(), new NativeInput { Type = InputTypeMouse, Data = new InputUnion { Mouse = new MouseInput { MouseData = unchecked((uint)input.Delta), Flags = MouseWheelFlag } } }],
-            _ => []
-        };
-        if (inputs.Length > 0 && inputs.Length == 2 && inputs[1].Data.Mouse.Flags == 0 && input.Kind is "mouse-down" or "mouse-up") return;
-        if (inputs.Length > 0) SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeInput>());
     }
 
     private bool IsLocalAddress(string address)
@@ -2831,7 +2437,7 @@ public partial class ChatRoomWindow : Window
         if (_closingStarted) return;
         _closingStarted = true;
         _statusTimer.Stop();
-        var remoteIds = _remoteSessions.Keys.Concat(_localRemoteSessions.Keys).Concat(_remoteCaptures.Keys).Concat(_remoteViewers.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
+        var remoteIds = _remoteSessions.Keys.Concat(_localRemoteSessions.Keys).Concat(_remoteCaptures.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
         foreach (var sessionId in remoteIds)
         {
             await SendRemoteStopAsync(sessionId);
@@ -2913,16 +2519,8 @@ public partial class ChatRoomWindow : Window
         public int ChunkCount { get; set; }
         public long TotalBytes { get; set; }
         public string? SessionId { get; set; }
-        public string? Codec { get; set; }
         public string? TargetIp { get; set; }
         public bool Accepted { get; set; }
-        public string? InputKind { get; set; }
-        public int X { get; set; }
-        public int Y { get; set; }
-        public int Button { get; set; }
-        public int Delta { get; set; }
-        public int VirtualKey { get; set; }
-        public bool KeyDown { get; set; }
         public int Port { get; set; }
         public string? RustDeskId { get; set; }
         public bool PasswordRequired { get; set; }
