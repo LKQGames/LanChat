@@ -89,12 +89,20 @@ public partial class ChatRoomWindow : Window
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint inputCount, NativeInput[] inputs, int inputSize);
 
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+
     [DllImport("iphlpapi.dll", SetLastError = true)]
     private static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int addressFamily, int tableClass, uint reserved);
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
 
+    /// <summary>
+    /// 必须与 C 的 INPUT 结构完全一致：SendInput 会校验 cbSize，
+    /// 联合体要按最大的 MOUSEINPUT 取尺寸（x64 下 INPUT 为 40 字节），
+    /// 否则会返回 ERROR_INVALID_PARAMETER（错误码 87）。
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeInput
     {
@@ -105,7 +113,20 @@ public partial class ChatRoomWindow : Window
     [StructLayout(LayoutKind.Explicit)]
     private struct InputUnion
     {
+        [FieldOffset(0)] public MouseInput Mouse;
         [FieldOffset(0)] public KeyboardInput Keyboard;
+        [FieldOffset(0)] public HardwareInput Hardware;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInput
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -116,6 +137,14 @@ public partial class ChatRoomWindow : Window
         public uint Flags;
         public uint Time;
         public UIntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HardwareInput
+    {
+        public uint Message;
+        public ushort ParamLow;
+        public ushort ParamHigh;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1009,17 +1038,90 @@ public partial class ChatRoomWindow : Window
 
     private void MessageInput_Pasting(object sender, DataObjectPastingEventArgs e)
     {
+        // 1) 从资源管理器复制的文件：图片直接按图片发送，其他文件按附件发送。
         if (e.DataObject.GetDataPresent(DataFormats.FileDrop, true) && e.DataObject.GetData(DataFormats.FileDrop, true) is string[] paths && paths.Length > 0)
         {
             e.CancelCommand();
-            _ = UploadFilesAsync(paths, false);
+            var allImages = paths.All(IsImagePath);
+            _ = UploadFilesAsync(paths, allImages);
             return;
         }
+
+        // 2) 剪贴板里是位图（截图、复制的图片）：自动以图片消息发送。
+        var imageBytes = TryReadClipboardImage(e.DataObject);
+        if (imageBytes is not null)
+        {
+            e.CancelCommand();
+            _ = SendPastedImageAsync(imageBytes);
+            return;
+        }
+
+        // 3) 纯文本：粘贴为无格式文本，避免带入外部字体和颜色。
         if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText, true)) return;
         var text = e.DataObject.GetData(DataFormats.UnicodeText, true) as string ?? string.Empty;
         var plain = new DataObject();
         plain.SetText(text);
         e.DataObject = plain;
+    }
+
+    private static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"];
+
+    private static bool IsImagePath(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return ImageExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>把剪贴板中的位图转成 PNG 字节；不是图片时返回 null。</summary>
+    private static byte[]? TryReadClipboardImage(IDataObject data)
+    {
+        try
+        {
+            if (data.GetDataPresent("PNG", true) && data.GetData("PNG", true) is Stream pngStream)
+            {
+                using (pngStream)
+                {
+                    using var buffer = new MemoryStream();
+                    pngStream.CopyTo(buffer);
+                    if (buffer.Length > 0) return buffer.ToArray();
+                }
+            }
+            if (data.GetDataPresent(DataFormats.Bitmap, true) && data.GetData(DataFormats.Bitmap, true) is BitmapSource source)
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(source));
+                using var output = new MemoryStream();
+                encoder.Save(output);
+                return output.Length > 0 ? output.ToArray() : null;
+            }
+        }
+        catch (Exception ex) when (ex is NotSupportedException or IOException or System.Runtime.InteropServices.COMException or ArgumentException or InvalidOperationException)
+        {
+            AppLog.Write($"读取剪贴板图片失败：{ex.Message}");
+        }
+        return null;
+    }
+
+    /// <summary>把粘贴进来的图片写入临时文件并以图片消息发送，避免粘贴内容停留在输入框。</summary>
+    private async Task SendPastedImageAsync(byte[] png)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"LanChat-paste-{Guid.NewGuid():N}.png");
+        try
+        {
+            await Task.Run(() => File.WriteAllBytes(path, png)).ConfigureAwait(false);
+            AppLog.Write($"检测到剪贴板图片，{png.Length:N0} 字节，自动按图片发送。");
+            // 上传流程会操作界面控件，必须回到 UI 线程执行。
+            await Dispatcher.InvokeAsync(() => UploadFilesAsync(new[] { path }, true)).Task.Unwrap().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Write($"粘贴图片发送失败：{ex}");
+            AddMessage("系统", $"粘贴的图片无法发送：{ex.Message}", null, null);
+        }
+        finally
+        {
+            try { File.Delete(path); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     private async void MemberCommand_Click(object sender, RoutedEventArgs e)
@@ -2023,14 +2125,23 @@ public partial class ChatRoomWindow : Window
                 KeyboardEvent(VirtualKeyPeriod, KeyEventKeyUp),
                 KeyboardEvent(VirtualKeyLeftWindows, KeyEventKeyUp)
             };
-            var sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeInput>());
-            if (sent != inputs.Length)
+            var size = Marshal.SizeOf<NativeInput>();
+            var sent = SendInput((uint)inputs.Length, inputs, size);
+            if (sent == inputs.Length)
             {
-                var error = Marshal.GetLastWin32Error();
-                AppLog.Write($"无法打开 Windows 表情面板，SendInput 错误码 {error}。可使用 Win+. 打开。");
-                AddMessage("系统", "无法打开 Windows 表情面板，请按 Win+. 手动打开。", null, null);
+                AppLog.Write("已请求打开 Windows 表情面板（Win+.）。");
+                return;
             }
-            else AppLog.Write("已请求打开 Windows 表情面板（Win+.）。");
+
+            var error = Marshal.GetLastWin32Error();
+            AppLog.Write($"SendInput 打开表情面板失败：已发送 {sent}/{inputs.Length}，cbSize={size}，错误码 {error}。尝试改用 keybd_event。");
+
+            // 回退方案：部分环境（例如输入被另一个桌面或钩子拦截）下 SendInput 不生效。
+            keybd_event((byte)VirtualKeyLeftWindows, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)VirtualKeyPeriod, 0, 0, UIntPtr.Zero);
+            keybd_event((byte)VirtualKeyPeriod, 0, KeyEventKeyUp, UIntPtr.Zero);
+            keybd_event((byte)VirtualKeyLeftWindows, 0, KeyEventKeyUp, UIntPtr.Zero);
+            AppLog.Write("已通过 keybd_event 再次请求打开 Windows 表情面板。");
         }), System.Windows.Threading.DispatcherPriority.Input);
     }
 
