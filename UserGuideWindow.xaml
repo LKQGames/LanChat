@@ -59,7 +59,7 @@
                     <TextBlock Text="RustDesk 是单独启动的原版客户端，不是嵌入 LanChat 窗口的控件。按 AGPL-3.0 分发；许可证全文与对应的 1.5.3 源码压缩包均内置于本程序，可通过下方按钮导出。版本及源码：https://github.com/rustdesk/rustdesk/tree/1.5.3。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" />
 
                     <TextBlock Text="12. 艾特与引用回复" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
-                    <TextBlock Text="在输入框输入 @ 会自动列出房间成员，用上下键选择后按 Enter（或直接用鼠标点击）即可插入蓝色的 @用户名；也可以在成员列表右键选择“艾特 TA”直接插入。被艾特的成员会收到 Windows 通知提示“您被 xxx 艾特了”。在收到的消息上点右键，可以选择“复制消息”或“回复消息”；回复时会自动引用原消息并在输入框补上 @对方，发送后引用内容显示在消息上方。" TextWrapping="Wrap" Margin="0,7,0,0" />
+                    <TextBlock Text="在输入框输入 @ 会自动列出房间成员，用上下键选择后按 Enter（或直接用鼠标点击）即可插入蓝色的 @用户名；也可以在成员列表右键选择“艾特 TA”直接插入。被艾特的成员会收到 Windows 通知提示“您被 xxx 艾特了”。在收到的消息上点右键，可以选择“复制消息”或“回复消息”；回复时会自动引用原消息并在输入框补上 @对方，发送后引用内容显示在消息上方；点击引用块可跳转并高亮被引用的原消息。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
                     <TextBlock Text="6. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="每个页面都可单独点击“📌 置顶”，让当前窗口保持在其他窗口上方；取消勾选即可恢复普通层级。" TextWrapping="Wrap" Margin="0,7,0,0" />

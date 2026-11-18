@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Net.Sockets;
 using Microsoft.Win32;
@@ -68,6 +69,9 @@ public partial class ChatRoomWindow : Window
     private int _remoteConsentOpen;
     private string? _replySender;
     private string? _replyText;
+    private string? _replyToId;
+    private readonly string _clientTag = Guid.NewGuid().ToString("N")[..6];
+    private int _messageSeq;
     private TextPointer? _mentionFragmentStart;
     private bool _suppressMentionSuggestions;
     private bool _mentionDismissed;
@@ -581,6 +585,8 @@ public partial class ChatRoomWindow : Window
                 packet.Sender = peer.Name;
                 packet.SenderRole = RoleOf(peer);
                 packet.SenderIp = peer.Ip;
+                // 旧版本对端可能没有带消息 ID，由房主补上，保证所有成员都能互相跳转引用。
+                packet.MessageId ??= NextMessageId();
                 await BroadcastAsync(packet, cancellationToken);
                 if (packet.Type == "attachment-chunk")
                 {
@@ -695,7 +701,8 @@ public partial class ChatRoomWindow : Window
         var packet = new RoomPacket
         {
             Type = "text", Room = _roomName, Sender = _userName, SenderRole = _myRole,
-            SenderIp = GetLocalPrivateIpv4(), Text = text, ReplySender = _replySender, ReplyText = _replyText
+            SenderIp = GetLocalPrivateIpv4(), Text = text, ReplySender = _replySender, ReplyText = _replyText,
+            MessageId = NextMessageId(), ReplyToId = _replyToId
         };
         AppLog.Write($"{_roomName} · {_userName}: {text}");
         ClearMessageInput();
@@ -727,6 +734,7 @@ public partial class ChatRoomWindow : Window
     {
         _replySender = null;
         _replyText = null;
+        _replyToId = null;
         ReplyBar.Visibility = Visibility.Collapsed;
         ReplySenderText.Text = string.Empty;
         ReplyPreviewText.Text = string.Empty;
@@ -2438,12 +2446,16 @@ public partial class ChatRoomWindow : Window
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GlobalUnlock(IntPtr memory);
 
+    /// <summary>生成本机消息 ID：客户端标签 + 自增序号，保证同一房间内不重复。</summary>
+    private string NextMessageId() => $"{_clientTag}-{Interlocked.Increment(ref _messageSeq)}";
+
     private void ReplyMessage_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { DataContext: ChatMessage message }) return;
         var author = string.IsNullOrWhiteSpace(message.Author) ? message.Sender : message.Author;
         _replySender = author;
         _replyText = message.Text;
+        _replyToId = message.Id;
         ReplySenderText.Text = $"{author}：";
         ReplyPreviewText.Text = message.Text;
         ReplyBar.Visibility = Visibility.Visible;
@@ -2453,6 +2465,7 @@ public partial class ChatRoomWindow : Window
 
     private void AddPacket(RoomPacket packet, byte[]? attachmentData = null)
     {
+        if (packet.Type is not "system") packet.MessageId ??= NextMessageId();
         BitmapImage? thumbnail = null;
         if (packet.Type == "image" && attachmentData is not null)
         {
@@ -2483,7 +2496,7 @@ public partial class ChatRoomWindow : Window
             sender += $" · {packet.SenderRole ?? "访客"}";
         if (!string.IsNullOrWhiteSpace(packet.SenderIp)) sender += $" · {packet.SenderIp}";
         AddMessage(sender, text, packet.Type is "file" or "image" ? packet.FileName : null, thumbnail, attachmentData,
-            packet.MimeType, packet.Type == "system" ? null : author, packet.ReplySender, packet.ReplyText);
+            packet.MimeType, packet.Type == "system" ? null : author, packet.ReplySender, packet.ReplyText, packet.MessageId, packet.ReplyToId);
         if (packet.Type is "file" or "image") AppLog.Write($"附件进入收件列表：{packet.Type} · {packet.FileName ?? "(未命名)"} · 来自 {sender}。");
         if (packet.Type == "text" && !string.Equals(packet.Sender, _userName, StringComparison.OrdinalIgnoreCase) && MentionsUser(packet.Text, _userName))
         {
@@ -2507,17 +2520,96 @@ public partial class ChatRoomWindow : Window
         return false;
     }
 
-    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, byte[]? data = null, string? mimeType = null, string? author = null, string? replySender = null, string? replyText = null)
+    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, byte[]? data = null, string? mimeType = null, string? author = null, string? replySender = null, string? replyText = null, string? id = null, string? replyToId = null)
     {
         if (!Dispatcher.CheckAccess())
         {
             _ = Dispatcher.BeginInvoke(new Action(() =>
-                AddMessage(sender, text, attachment, thumbnail, data, mimeType, author, replySender, replyText)));
+                AddMessage(sender, text, attachment, thumbnail, data, mimeType, author, replySender, replyText, id, replyToId)));
             return;
         }
+        id ??= NextMessageId();
         var displayText = attachment is null ? text : text;
-        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, data, mimeType, author, replySender, replyText));
+        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, data, mimeType, author, replySender, replyText, id, replyToId));
         MessageScroll.ScrollToEnd();
+    }
+
+    /// <summary>点击引用块：跳到被引用的那条消息并短暂高亮。</summary>
+    private void Quote_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ChatMessage message }) return;
+        e.Handled = true;
+        JumpToQuotedMessage(message);
+    }
+
+    private void JumpToQuotedMessage(ChatMessage message)
+    {
+        var target = FindQuotedMessage(message);
+        if (target is null)
+        {
+            AddMessage("系统", "找不到被引用的消息，可能已不在当前聊天记录中。", null, null);
+            return;
+        }
+        var container = MessagesList.ItemContainerGenerator.ContainerFromItem(target) as FrameworkElement;
+        if (container is null)
+        {
+            AddMessage("系统", "找不到被引用的消息，可能已被滚动加载隐藏。", null, null);
+            return;
+        }
+        container.BringIntoView();
+        HighlightMessage(container);
+        AppLog.Write($"已跳转到被引用的消息：{target.Time} · {target.Author ?? target.Sender}。");
+    }
+
+    /// <summary>优先按消息 ID 定位；旧版本对端没有 ID 时退回“发送者 + 内容”匹配最近一条。</summary>
+    private ChatMessage? FindQuotedMessage(ChatMessage quote)
+    {
+        if (!string.IsNullOrEmpty(quote.QuoteTargetId))
+        {
+            var exact = _messages.FirstOrDefault(m => string.Equals(m.Id, quote.QuoteTargetId, StringComparison.Ordinal));
+            if (exact is not null) return exact;
+        }
+        var quoteSender = quote.QuoteSender;
+        var quoteText = quote.QuoteText;
+        if (string.IsNullOrEmpty(quoteText)) return null;
+        var index = _messages.IndexOf(quote);
+        var limit = index >= 0 ? index : _messages.Count;
+        for (var i = limit - 1; i >= 0; i--)
+        {
+            var candidate = _messages[i];
+            if (!string.Equals(candidate.Text, quoteText, StringComparison.Ordinal)) continue;
+            if (quoteSender is not null &&
+                !string.Equals(candidate.Author ?? candidate.Sender, quoteSender, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(candidate.Sender, quoteSender, StringComparison.OrdinalIgnoreCase)) continue;
+            return candidate;
+        }
+        return null;
+    }
+
+    private static void HighlightMessage(FrameworkElement container)
+    {
+        var bubble = FindDescendant<Border>(container, "Bubble");
+        if (bubble is null) return;
+        var brush = new SolidColorBrush(Color.FromRgb(0x3A, 0x57, 0x8F));
+        bubble.Background = brush;
+        var animation = new ColorAnimation(Color.FromRgb(0x10, 0x12, 0x18), TimeSpan.FromMilliseconds(1400))
+        {
+            BeginTime = TimeSpan.FromMilliseconds(500)
+        };
+        brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T element && element.Name == name) return element;
+            var nested = FindDescendant<T>(child, name);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     private static string GetImageMime(string extension) => extension.ToLowerInvariant() switch
@@ -2639,9 +2731,11 @@ public partial class ChatRoomWindow : Window
         public string? HostAddress { get; set; }
         public string? ReplySender { get; set; }
         public string? ReplyText { get; set; }
+        public string? MessageId { get; set; }
+        public string? ReplyToId { get; set; }
     }
 
-    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, byte[]? Data, string? MimeType, string? Author = null, string? QuoteSender = null, string? QuoteText = null)
+    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, byte[]? Data, string? MimeType, string? Author = null, string? QuoteSender = null, string? QuoteText = null, string? Id = null, string? QuoteTargetId = null)
     {
         public bool IsSystem => Sender == "系统";
         public string AttachmentLabel => Attachment is null ? string.Empty : $"📎 {Attachment}";

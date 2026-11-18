@@ -50,7 +50,8 @@
                                             <TextBlock Text="{Binding Sender}" FontWeight="SemiBold" FontSize="12" Foreground="#C2D2F5" DockPanel.Dock="Left" />
                                             <TextBlock Text="{Binding Time}" FontSize="10" Foreground="#767B88" DockPanel.Dock="Right" Margin="14,0,0,0" />
                                         </DockPanel>
-                                        <Border Visibility="{Binding QuoteVisibility}" Background="#1B2029" BorderBrush="#739CFF" BorderThickness="3,0,0,0" CornerRadius="6" Padding="9,6" Margin="0,0,0,7">
+                                        <Border x:Name="QuoteBlock" Visibility="{Binding QuoteVisibility}" Background="#1B2029" BorderBrush="#739CFF" BorderThickness="3,0,0,0" CornerRadius="6" Padding="9,6" Margin="0,0,0,7"
+                                                Cursor="Hand" ToolTip="点击跳转到被引用的消息" MouseLeftButtonUp="Quote_Click">
                                             <StackPanel>
                                                 <TextBlock Text="{Binding QuoteSender}" FontSize="11" FontWeight="SemiBold" Foreground="#9BB6E8" TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Text="{Binding QuoteText}" FontSize="12" Foreground="#C4C9D4" TextWrapping="Wrap" MaxHeight="56" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
