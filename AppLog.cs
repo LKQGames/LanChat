@@ -43,21 +43,23 @@ internal static class AppLog
     /// <summary>
     /// 崩溃时调用：日志此前已逐行写入磁盘，这里再补一段崩溃详情，
     /// 并单独生成 LanChat-crash-时间戳.txt，确保闪退也能留下记录。
+    /// fatal = false 表示异常已被上层接住、程序会继续运行，日志文件保持可写。
     /// </summary>
-    public static void SaveCrashLog(Exception? exception, string source)
+    public static void SaveCrashLog(Exception? exception, string source, bool fatal = true)
     {
         var stamp = $"{DateTime.Now:yyyyMMdd-HHmmss}";
-        var detail = BuildCrashText(exception, source);
+        var detail = BuildCrashText(exception, source, fatal);
         lock (Sync)
         {
             AppendToFile(detail);
-            CloseWriter();
+            if (fatal) CloseWriter();
             foreach (var directory in GetLogDirectories())
             {
                 try
                 {
                     Directory.CreateDirectory(directory);
-                    File.WriteAllText(Path.Combine(directory, $"LanChat-crash-{stamp}.txt"), detail, new UTF8Encoding(true));
+                    var name = fatal ? $"LanChat-crash-{stamp}.txt" : $"LanChat-error-{stamp}.txt";
+                    File.AppendAllText(Path.Combine(directory, name), detail, new UTF8Encoding(true));
                     break;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException) { }
@@ -65,10 +67,10 @@ internal static class AppLog
         }
     }
 
-    private static string BuildCrashText(Exception? exception, string source)
+    private static string BuildCrashText(Exception? exception, string source, bool fatal)
     {
         var builder = new StringBuilder();
-        builder.AppendLine($"===== 崩溃记录 {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
+        builder.AppendLine($"===== {(fatal ? "崩溃记录" : "异常记录")} {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
         builder.AppendLine($"来源：{source}");
         builder.AppendLine($"程序版本：{typeof(AppLog).Assembly.GetName().Version}");
         builder.AppendLine($"进程：{Environment.ProcessPath}");
@@ -91,7 +93,7 @@ internal static class AppLog
                 depth++;
             }
         }
-        builder.AppendLine("===== 崩溃记录结束 =====");
+        builder.AppendLine("===== 记录结束 =====");
         return builder.ToString();
     }
 

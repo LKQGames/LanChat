@@ -23,8 +23,10 @@ namespace LanChat;
 
 public partial class ChatRoomWindow : Window
 {
-    private const long MaxAttachmentBytes = 200L * 1024 * 1024;
+    private const long MaxAttachmentBytes = 1024L * 1024 * 1024;
     private const int AttachmentChunkBytes = 512 * 1024;
+    private const int MaxAttachmentChunks = 4096;
+    private const string MaxAttachmentText = "1 GB";
     private readonly string _roomName;
     private readonly string _password;
     private readonly string _userName;
@@ -37,6 +39,7 @@ public partial class ChatRoomWindow : Window
     private readonly object _peerLock = new();
     private readonly SemaphoreSlim _upstreamWriteLock = new(1, 1);
     private readonly ConcurrentDictionary<string, AttachmentAccumulator> _incomingAttachments = new();
+    private readonly AttachmentStore _attachments = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingUploadAcks = new();
     private readonly ConcurrentDictionary<string, RemoteSession> _remoteSessions = new();
     private readonly ConcurrentDictionary<string, RemoteSession> _localRemoteSessions = new();
@@ -61,6 +64,9 @@ public partial class ChatRoomWindow : Window
     private readonly DateTime _roomStartedAt = DateTime.Now;
     private readonly DispatcherTimer _statusTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private long _lastServerHeartbeatTicks = DateTime.UtcNow.Ticks;
+    private volatile bool _upstreamClosed;
+    private string _serverEndpoint = "无";
+    private string? _lastStatusState;
     private bool _closingStarted;
     private bool _allowClose;
     private bool _isMuted;
@@ -225,16 +231,27 @@ public partial class ChatRoomWindow : Window
     {
         _statusTimer.Tick += (_, _) =>
         {
+            string state;
+            string message;
             if (_listener is not null)
             {
                 int count;
                 lock (_peerLock) count = _peers.Count;
-                AppLog.Write($"运行状态：房间“{_roomName}”监听中，成员数 {count}，运行时长 {DateTime.Now - _roomStartedAt:hh\\:mm\\:ss}，公开发现 {(IsPublic ? "启用" : "关闭")}。");
+                state = $"host|{count}|{IsPublic}";
+                message = $"运行状态：房间“{_roomName}”监听中，成员数 {count}，运行时长 {DateTime.Now - _roomStartedAt:hh\\:mm\\:ss}，公开发现 {(IsPublic ? "启用" : "关闭")}。";
             }
             else
             {
-                AppLog.Write($"运行状态：房间“{_roomName}”客户端连接 {(_upstream?.Connected == true ? "正常" : "已断开")}，服务器 {_upstream?.Client.RemoteEndPoint}。");
+                // 连接断开后 TcpClient.Client 可能已被释放，不能再访问套接字属性（否则会抛异常导致闪退），
+                // 这里只使用连接时缓存的服务器地址和断开标记。
+                var connection = _upstreamClosed ? "已断开" : (_upstream is { Connected: true } ? "正常" : "已断开");
+                state = $"guest|{connection}";
+                message = $"运行状态：房间“{_roomName}”客户端连接 {connection}，服务器 {_serverEndpoint}。";
             }
+            // 只在状态变化时记录，避免长时间挂机把日志刷满。
+            if (state == _lastStatusState) return;
+            _lastStatusState = state;
+            AppLog.Write(message);
         };
         _statusTimer.Start();
     }
@@ -256,6 +273,7 @@ public partial class ChatRoomWindow : Window
         MembersList.ItemsSource = _members;
         RoomTitle.Text = roomName;
         RoomSubtitle.Text = $"{host}:{port} · 正在连接";
+        _serverEndpoint = $"{host}:{port}";
         var writer = new StreamWriter(_upstreamStream, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
         writer.WriteLine(JsonSerializer.Serialize(new RoomPacket { Type = "join", Room = roomName, Password = password, Sender = _userName }));
         _ = ReadServerAsync(_upstreamStream, _shutdown.Token);
@@ -370,7 +388,7 @@ public partial class ChatRoomWindow : Window
                 {
                     var complete = AcceptAttachmentChunk(packet);
                     if (complete is not null)
-                        await Dispatcher.InvokeAsync(() => AddPacket(complete.Value.Packet, complete.Value.Data));
+                        await Dispatcher.InvokeAsync(() => AddPacket(complete.Value.Packet, complete.Value.Path));
                     continue;
                 }
                 if (packet.Type == "attachment-ack" && packet.TransferId is not null)
@@ -383,10 +401,10 @@ public partial class ChatRoomWindow : Window
                     if (packet.Type == "error") RoomSubtitle.Text = packet.Text ?? "无法加入房间";
                     else
                     {
-                        RoomSubtitle.Text = $"{_upstream?.Client.RemoteEndPoint} · 已连接";
+                        RoomSubtitle.Text = $"{_serverEndpoint} · 已连接";
                         AddPacket(packet);
                         if (packet.Type is "text" or "file" or "image" or "system")
-                            AppLog.Write($"收到房间数据：类型 {packet.Type}，发送者 {packet.Sender ?? "系统"}，内容/附件 {packet.FileName ?? packet.Text ?? "(无)"}。");
+                            AppLog.Write($"收到房间数据：类型 {packet.Type}，发送者 {packet.Sender ?? "系统"}，内容/附件 {TrimForLog(packet.FileName ?? packet.Text)}。");
                     }
                 });
             }
@@ -396,7 +414,8 @@ public partial class ChatRoomWindow : Window
         catch (JsonException ex) { AppLog.Write($"收到无效房间数据：{ex}"); }
         finally
         {
-            _incomingAttachments.Clear();
+            _upstreamClosed = true;
+            AbortIncomingAttachments();
             foreach (var pending in _pendingUploadAcks.Values)
                 pending.TrySetException(new IOException("与房主的连接已断开，未收到附件接收确认。"));
             if (!cancellationToken.IsCancellationRequested) AppLog.Write($"房间“{_roomName}”连接结束。");
@@ -437,6 +456,7 @@ public partial class ChatRoomWindow : Window
                     });
                 }
                 catch (InvalidOperationException) { }
+                _upstreamClosed = true;
                 _upstream?.Close();
                 return;
             }
@@ -593,8 +613,8 @@ public partial class ChatRoomWindow : Window
                     var complete = AcceptAttachmentChunk(packet);
                     if (complete is not null)
                     {
-                        Dispatcher.Invoke(() => AddPacket(complete.Value.Packet, complete.Value.Data));
-                        AppLog.Write($"收到成员附件：{peer.Name} ({peer.Ip})，{complete.Value.Packet.FileName}，{complete.Value.Data.LongLength:N0} 字节。");
+                        Dispatcher.Invoke(() => AddPacket(complete.Value.Packet, complete.Value.Path));
+                        AppLog.Write($"收到成员附件：{peer.Name} ({peer.Ip})，{complete.Value.Packet.FileName}，{new FileInfo(complete.Value.Path).Length:N0} 字节。");
                         await peer.WriteLock.WaitAsync(cancellationToken);
                         try { await WritePacketAsync(peer.Stream, new RoomPacket { Type = "attachment-ack", TransferId = packet.TransferId }, cancellationToken); }
                         finally { peer.WriteLock.Release(); }
@@ -627,7 +647,9 @@ public partial class ChatRoomWindow : Window
                     try { await Dispatcher.InvokeAsync(() => EndRemoteSessionLocally(session.SessionId)); } catch (InvalidOperationException) { }
                 }
                 foreach (var transfer in _incomingAttachments.Where(entry => entry.Value.SenderIp == peer.Ip).Select(entry => entry.Key).ToArray())
-                    _incomingAttachments.TryRemove(transfer, out _);
+                {
+                    if (_incomingAttachments.TryRemove(transfer, out var abandoned)) abandoned.Dispose();
+                }
                 try
                 {
                     await BroadcastAsync(new RoomPacket { Type = "member-left", Sender = peer.Name, SenderIp = peer.Ip }, cancellationToken);
@@ -684,6 +706,11 @@ public partial class ChatRoomWindow : Window
     {
         var text = GetMessageInputText().Trim();
         if (text.Length == 0) return;
+        if (_upstreamStream is not null && _upstreamClosed)
+        {
+            AddMessage("系统", "与房间主机的连接已断开，消息未发送。内容仍保留在输入框，可复制后重新加入房间。", null, null);
+            return;
+        }
         if (_upstreamStream is not null && _isMuted)
         {
             AppLog.Write($"已拦截禁言访客 {_userName} 的消息发送操作。");
@@ -705,10 +732,21 @@ public partial class ChatRoomWindow : Window
             MessageId = NextMessageId(), ReplyToId = _replyToId
         };
         AppLog.Write($"{_roomName} · {_userName}: {text}");
+        if (_upstreamStream is not null)
+        {
+            // 先确认写入成功再清空输入框，连接已断开时保住用户输入的内容。
+            if (await WriteUpstreamPacketAsync(packet, _shutdown.Token))
+            {
+                ClearMessageInput();
+                ClearReply();
+            }
+            else AddMessage("系统", "消息未能发送：与房间主机的连接已断开，内容仍保留在输入框。", null, null);
+            return;
+        }
         ClearMessageInput();
         ClearReply();
-        if (_upstreamStream is not null) await WriteUpstreamPacketAsync(packet, _shutdown.Token);
-        else { AddPacket(packet); await BroadcastAsync(packet, _shutdown.Token); }
+        AddPacket(packet);
+        await BroadcastAsync(packet, _shutdown.Token);
     }
 
     private string GetMessageInputText()
@@ -926,11 +964,12 @@ public partial class ChatRoomWindow : Window
     private async Task SendAdminCommandAsync(string command)
     {
         if (_upstreamStream is null) return;
-        await WriteUpstreamPacketAsync(new RoomPacket
+        var sent = await WriteUpstreamPacketAsync(new RoomPacket
         {
             Type = "admin-command", Room = _roomName, Sender = _userName, SenderIp = GetLocalPrivateIpv4(), Text = command
         }, _shutdown.Token);
-        AppLog.Write($"已向房主提交管理员指令：{command}。");
+        if (sent) AppLog.Write($"已向房主提交管理员指令：{command}。");
+        else AddMessage("系统", "管理员指令未发送：与房间主机的连接已断开。", null, null);
     }
 
     private void MembersToggle_Changed(object sender, RoutedEventArgs e)
@@ -1113,7 +1152,8 @@ public partial class ChatRoomWindow : Window
     /// <summary>把粘贴进来的图片写入临时文件并以图片消息发送，避免粘贴内容停留在输入框。</summary>
     private async Task SendPastedImageAsync(byte[] png)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"LanChat-paste-{Guid.NewGuid():N}.png");
+        // 粘贴的图片同样落到会话附件目录，发送后仍可点击“下载附件”保存。
+        var path = _attachments.CreatePath("粘贴的图片.png", ".png");
         try
         {
             await Task.Run(() => File.WriteAllBytes(path, png)).ConfigureAwait(false);
@@ -1125,10 +1165,6 @@ public partial class ChatRoomWindow : Window
         {
             AppLog.Write($"粘贴图片发送失败：{ex}");
             AddMessage("系统", $"粘贴的图片无法发送：{ex.Message}", null, null);
-        }
-        finally
-        {
-            try { File.Delete(path); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
 
@@ -1281,15 +1317,23 @@ public partial class ChatRoomWindow : Window
         AddMessage("系统", $"已向 {member.Name} 发送远程控制申请，等待对方确认。", null, null);
         AppLog.Write($"已请求远程控制：{member.Name} ({member.Ip})，会话 {sessionId}。");
         RustDeskRuntime.RegisterClientSession(sessionId, member.Ip);
-        _ = PrepareControllerAsync(member.Name);
+        _ = PrepareControllerAsync(sessionId, member.Name, member.Ip);
     }
 
     /// <summary>发起申请时就启动 RustDesk（仅托盘），对方接受后直接弹出连接窗口。</summary>
-    private async Task PrepareControllerAsync(string targetName)
+    private async Task PrepareControllerAsync(string sessionId, string targetName, string targetIp)
     {
         try
         {
-            if (!await RustDeskRuntime.EnsureRunningAsync(_shutdown.Token)) return;
+            var running = await RustDeskRuntime.EnsureRunningAsync(_shutdown.Token);
+            // 准备期间对方可能已经拒绝或超时：此时会话已结束，不能再留下一个空的 RustDesk 进程。
+            if (!_outgoingRemoteSessions.ContainsKey(sessionId))
+            {
+                AppLog.Write($"远程控制申请已结束，取消为 {targetName} 准备的 RustDesk 控制端。");
+                if (running) RustDeskRuntime.EndClientSession(sessionId, targetIp);
+                return;
+            }
+            if (!running) return;
             AppLog.Write($"RustDesk 控制端已就绪（无主窗口），等待对方接受：{targetName}。");
         }
         catch (OperationCanceledException) { }
@@ -1907,10 +1951,20 @@ public partial class ChatRoomWindow : Window
 
     private static async Task SendPeerPacketAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
     {
-        var bytes = SerializePacket(packet);
-        await peer.WriteLock.WaitAsync(cancellationToken);
-        try { await WritePacketBytesAsync(peer.Stream, bytes, cancellationToken); }
-        finally { peer.WriteLock.Release(); }
+        byte[] bytes;
+        try { bytes = SerializePacket(packet); }
+        catch (ArgumentException) { return; }
+        try
+        {
+            await peer.WriteLock.WaitAsync(cancellationToken);
+            try { await WritePacketBytesAsync(peer.Stream, bytes, cancellationToken); }
+            finally { peer.WriteLock.Release(); }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or SocketException or InvalidOperationException)
+        {
+            // 对方已断开：丢弃该数据包，连接由心跳和监听线程负责清理，
+            // 不能让异常冒泡到 async void 事件处理器导致整个程序退出。
+        }
     }
 
     private static bool Matches(Peer peer, string target) =>
@@ -1977,7 +2031,7 @@ public partial class ChatRoomWindow : Window
         var info = new FileInfo(filePath);
         if (info.Length > MaxAttachmentBytes)
         {
-            AddMessage("系统", $"文件“{info.Name}”超过 200 MB，已跳过。", null, null);
+            AddMessage("系统", $"文件“{info.Name}”超过 {MaxAttachmentText}，已跳过。", null, null);
             return;
         }
         _isUploading = true;
@@ -1991,54 +2045,71 @@ public partial class ChatRoomWindow : Window
         string? transferId = null;
         try
         {
-            var bytes = await File.ReadAllBytesAsync(filePath);
-            if (bytes.LongLength > MaxAttachmentBytes) throw new IOException("附件大小超过 200 MB 限制。");
-            AppLog.Write($"开始分块发送附件：{info.Name}，{info.Length:N0} 字节，{(bytes.Length + AttachmentChunkBytes - 1) / AttachmentChunkBytes} 个数据块。 ");
+            // 大文件分块读取，避免把整个文件读进内存（1 GB 上限）。
+            var totalBytes = info.Length;
+            if (totalBytes > MaxAttachmentBytes) throw new IOException($"附件大小超过 {MaxAttachmentText} 限制。");
+            var chunkCount = Math.Max(1, (int)((totalBytes + AttachmentChunkBytes - 1) / AttachmentChunkBytes));
+            if (chunkCount > MaxAttachmentChunks) throw new IOException("附件分块数量超过上限。");
+            AppLog.Write($"开始分块发送附件：{info.Name}，{totalBytes:N0} 字节，{chunkCount} 个数据块。");
             var isImage = imageOnly;
             transferId = Guid.NewGuid().ToString("N");
-            var chunkCount = Math.Max(1, (bytes.Length + AttachmentChunkBytes - 1) / AttachmentChunkBytes);
-            byte[]? assembled = null;
             TaskCompletionSource<bool>? uploadAck = null;
             if (_upstreamStream is not null)
             {
                 uploadAck = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _pendingUploadAcks[transferId] = uploadAck;
             }
-            for (var index = 0; index < chunkCount; index++)
+            var buffer = new byte[AttachmentChunkBytes];
+            await using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true))
             {
-                var offset = index * AttachmentChunkBytes;
-                var length = Math.Max(0, Math.Min(AttachmentChunkBytes, bytes.Length - offset));
-                var packet = new RoomPacket
+                for (var index = 0; index < chunkCount; index++)
                 {
-                    Type = "attachment-chunk", AttachmentType = isImage ? "image" : "file", TransferId = transferId,
-                    ChunkIndex = index, ChunkCount = chunkCount, TotalBytes = bytes.Length, Room = _roomName, Sender = _userName,
-                    SenderRole = _listener is null ? "访客" : "创建者", SenderIp = GetLocalPrivateIpv4(),
-                    FileName = info.Name, MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream",
-                    Data = Convert.ToBase64String(bytes, offset, length)
-                };
-                if (_upstreamStream is not null) await WriteUpstreamPacketAsync(packet, _shutdown.Token);
-                else
-                {
-                    await BroadcastAsync(packet, _shutdown.Token);
-                    var complete = AcceptAttachmentChunk(packet);
-                    if (complete is not null) assembled = complete.Value.Data;
+                    var offset = (long)index * AttachmentChunkBytes;
+                    var length = (int)Math.Min(AttachmentChunkBytes, totalBytes - offset);
+                    if (length > 0)
+                    {
+                        var read = 0;
+                        while (read < length)
+                        {
+                            var got = await stream.ReadAsync(buffer.AsMemory(read, length - read), _shutdown.Token);
+                            if (got == 0) break;
+                            read += got;
+                        }
+                        if (read != length) throw new IOException("文件在发送过程中被修改或截断。");
+                    }
+                    var packet = new RoomPacket
+                    {
+                        Type = "attachment-chunk", AttachmentType = isImage ? "image" : "file", TransferId = transferId,
+                        ChunkIndex = index, ChunkCount = chunkCount, TotalBytes = totalBytes, Room = _roomName, Sender = _userName,
+                        SenderRole = _listener is null ? "访客" : "创建者", SenderIp = GetLocalPrivateIpv4(),
+                        FileName = info.Name, MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream",
+                        Data = Convert.ToBase64String(buffer, 0, Math.Max(0, length))
+                    };
+                    if (_upstreamStream is not null)
+                    {
+                        if (!await WriteUpstreamPacketAsync(packet, _shutdown.Token))
+                            throw new IOException("与房间主机的连接已断开，附件上传已中止。");
+                    }
+                    else
+                    {
+                        // 房主本机不需要再组装一份：消息直接引用原始文件，省掉一整份内存/磁盘副本。
+                        await BroadcastAsync(packet, _shutdown.Token);
+                    }
+                    var sentBytes = Math.Min(totalBytes, (long)(index + 1) * AttachmentChunkBytes);
+                    SetUploadProgress($"正在上传：{info.Name}", sentBytes, Math.Max(1, totalBytes));
+                    if (index % 2 == 1) await Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
                 }
-                var sentBytes = Math.Min(bytes.Length, (long)(index + 1) * AttachmentChunkBytes);
-                SetUploadProgress($"正在上传：{info.Name}", sentBytes, Math.Max(1, bytes.Length));
-                if (index % 2 == 1) await Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
             }
             if (uploadAck is not null)
             {
-                SetUploadProgress($"正在等待接收确认：{info.Name}", bytes.Length * 0.99, Math.Max(1, bytes.Length));
+                SetUploadProgress($"正在等待接收确认：{info.Name}", totalBytes * 0.99, Math.Max(1, totalBytes));
                 await uploadAck.Task.WaitAsync(_shutdown.Token);
             }
-            if (_upstreamStream is null && assembled is not null)
-                AddPacket(new RoomPacket { Type = isImage ? "image" : "file", Sender = _userName, SenderRole = "创建者", SenderIp = GetLocalPrivateIpv4(), FileName = info.Name, MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream" }, assembled);
-            else if (_upstreamStream is null && assembled is null)
-                throw new IOException("本地附件数据未能完整组装。");
-            AppLog.Write($"附件发送成功：{info.Name}，{info.Length:N0} 字节，房间“{_roomName}”。");
+            if (_upstreamStream is null)
+                AddPacket(new RoomPacket { Type = isImage ? "image" : "file", Sender = _userName, SenderRole = "创建者", SenderIp = GetLocalPrivateIpv4(), FileName = info.Name, MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream" }, filePath);
+            AppLog.Write($"附件发送成功：{info.Name}，{totalBytes:N0} 字节，房间“{_roomName}”。");
             uploadSucceeded = true;
-            SetUploadProgress($"上传成功：{info.Name}", Math.Max(1, bytes.Length), Math.Max(1, bytes.Length));
+            SetUploadProgress($"上传成功：{info.Name}", Math.Max(1, totalBytes), Math.Max(1, totalBytes));
         }
         catch (IOException ex)
         {
@@ -2087,37 +2158,101 @@ public partial class ChatRoomWindow : Window
         : value >= 1024L * 1024 ? $"{value / (1024d * 1024):0.0} MB"
         : value >= 1024 ? $"{value / 1024d:0.0} KB" : $"{value} B";
 
-    private async Task WriteUpstreamPacketAsync(RoomPacket packet, CancellationToken cancellationToken)
+    /// <summary>
+    /// 写数据到房主连接。连接已断开时返回 false 而不是抛异常，
+    /// 避免 async void 事件处理器把 ObjectDisposedException 变成整程序崩溃。
+    /// </summary>
+    private async Task<bool> WriteUpstreamPacketAsync(RoomPacket packet, CancellationToken cancellationToken)
     {
-        if (_upstreamStream is null) return;
-        var bytes = SerializePacket(packet);
-        await _upstreamWriteLock.WaitAsync(cancellationToken);
-        try { await WritePacketBytesAsync(_upstreamStream, bytes, cancellationToken); }
-        finally { _upstreamWriteLock.Release(); }
+        var stream = _upstreamStream;
+        if (stream is null) return false;
+        if (_upstreamClosed) return false;
+        byte[] bytes;
+        try { bytes = SerializePacket(packet); }
+        catch (ArgumentException ex)
+        {
+            AppLog.Write($"房间数据序列化失败，已跳过该数据包：{ex.Message}");
+            return false;
+        }
+        try
+        {
+            await _upstreamWriteLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (_upstreamClosed) return false;
+                await WritePacketBytesAsync(stream, bytes, cancellationToken);
+                return true;
+            }
+            finally { _upstreamWriteLock.Release(); }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or IOException or SocketException or InvalidOperationException)
+        {
+            MarkUpstreamClosed(ex);
+            return false;
+        }
     }
 
-    private (RoomPacket Packet, byte[] Data)? AcceptAttachmentChunk(RoomPacket packet)
+    /// <summary>标记与房主的连接已断开，之后所有发送直接跳过并提示用户。</summary>
+    private void MarkUpstreamClosed(Exception? reason)
+    {
+        if (_upstreamClosed) return;
+        _upstreamClosed = true;
+        AppLog.Write($"与房主的连接已断开（{reason?.GetType().Name}: {reason?.Message}），后续消息将不再发送。");
+        try { _upstream?.Close(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+        if (Dispatcher.HasShutdownStarted) return;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            RoomSubtitle.Text = "连接已断开";
+            AddMessage("系统", "与房间主机的连接已断开，无法再发送消息。可以复制内容后重新搜索并加入房间。", null, null);
+        }));
+    }
+
+    private (RoomPacket Packet, string Path)? AcceptAttachmentChunk(RoomPacket packet)
     {
         if (string.IsNullOrWhiteSpace(packet.TransferId) || string.IsNullOrWhiteSpace(packet.SenderIp) || packet.Data is null ||
-            packet.ChunkCount is < 1 or > 1024 || packet.ChunkIndex < 0 || packet.ChunkIndex >= packet.ChunkCount ||
+            packet.ChunkCount is < 1 or > MaxAttachmentChunks || packet.ChunkIndex < 0 || packet.ChunkIndex >= packet.ChunkCount ||
             packet.TotalBytes is < 0 or > MaxAttachmentBytes || packet.ChunkCount != Math.Max(1, (packet.TotalBytes + AttachmentChunkBytes - 1) / AttachmentChunkBytes) ||
             packet.AttachmentType is not ("file" or "image")) return null;
         var transferKey = $"{packet.SenderIp}:{packet.TransferId}";
         if (!_incomingAttachments.TryGetValue(transferKey, out var accumulator))
         {
-            accumulator = new AttachmentAccumulator(packet);
-            if (!_incomingAttachments.TryAdd(transferKey, accumulator) && !_incomingAttachments.TryGetValue(transferKey, out accumulator)) return null;
+            AttachmentAccumulator created;
+            try
+            {
+                var path = _attachments.CreatePath(packet.FileName, packet.AttachmentType == "image" ? ".png" : ".bin");
+                created = new AttachmentAccumulator(packet, path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Write($"无法创建附件临时文件，已放弃该附件：{ex.Message}");
+                return null;
+            }
+            if (_incomingAttachments.TryAdd(transferKey, created)) accumulator = created;
+            else
+            {
+                created.Dispose();
+                if (!_incomingAttachments.TryGetValue(transferKey, out var existing)) return null;
+                accumulator = existing;
+            }
         }
         if (accumulator.SenderIp != packet.SenderIp) return null;
-        var completeData = accumulator.Add(packet);
-        if (completeData is null) return null;
+        if (!accumulator.Add(packet, out var reason))
+        {
+            if (reason is not null)
+            {
+                AppLog.Write($"附件数据块被丢弃：{reason}（会话 {transferKey}）。");
+                // 数据块无效说明传输已不可信，清掉半成品让发送方重新发起。
+                if (_incomingAttachments.TryRemove(transferKey, out var broken)) broken.Dispose();
+            }
+            return null;
+        }
         _incomingAttachments.TryRemove(transferKey, out _);
         var completePacket = new RoomPacket
         {
             Type = packet.AttachmentType, Room = packet.Room, Sender = packet.Sender, SenderRole = packet.SenderRole,
             SenderIp = packet.SenderIp, FileName = packet.FileName, MimeType = packet.MimeType
         };
-        return (completePacket, completeData);
+        return (completePacket, accumulator.FilePath);
     }
 
     private void Emoji_Click(object sender, RoutedEventArgs e)
@@ -2174,10 +2309,14 @@ public partial class ChatRoomWindow : Window
 
     private void Download_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not ChatMessage message || message.Data is null || message.Attachment is null) return;
+        if ((sender as FrameworkElement)?.DataContext is not ChatMessage message || message.DataPath is null || message.Attachment is null) return;
         try
         {
-            var bytes = message.Data;
+            if (!File.Exists(message.DataPath))
+            {
+                AddMessage("系统", $"附件“{message.Attachment}”的临时文件已不存在，请让对方重新发送。", null, null);
+                return;
+            }
             var defaultFolder = AppSettings.DownloadFolder;
             var dialog = new SaveFileDialog
             {
@@ -2188,11 +2327,14 @@ public partial class ChatRoomWindow : Window
             };
             if (dialog.ShowDialog(this) != true) return;
             Directory.CreateDirectory(Path.GetDirectoryName(dialog.FileName)!);
-            File.WriteAllBytes(dialog.FileName, bytes);
+            // 逐块复制，避免大文件整份读进内存。
+            using (var source = new FileStream(message.DataPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64 * 1024))
+            using (var target = new FileStream(dialog.FileName, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024))
+                source.CopyTo(target, 128 * 1024);
             AddMessage("系统", $"文件已保存到：{dialog.FileName}", null, null);
             AppLog.Write($"附件“{message.Attachment}”已保存到 {dialog.FileName}。");
         }
-        catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is FormatException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             MessageBox.Show(this, $"无法保存附件：{ex.Message}", "保存失败", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2463,24 +2605,24 @@ public partial class ChatRoomWindow : Window
         AppLog.Write($"正在回复 {author} 的消息。");
     }
 
-    private void AddPacket(RoomPacket packet, byte[]? attachmentData = null)
+    private void AddPacket(RoomPacket packet, string? attachmentPath = null)
     {
         if (packet.Type is not "system") packet.MessageId ??= NextMessageId();
         BitmapImage? thumbnail = null;
-        if (packet.Type == "image" && attachmentData is not null)
+        if (packet.Type == "image" && attachmentPath is not null)
         {
             try
             {
-                using var memory = new MemoryStream(attachmentData);
+                using var stream = new FileStream(attachmentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 thumbnail = new BitmapImage();
                 thumbnail.BeginInit();
                 thumbnail.CacheOption = BitmapCacheOption.OnLoad;
                 thumbnail.DecodePixelWidth = 640;
-                thumbnail.StreamSource = memory;
+                thumbnail.StreamSource = stream;
                 thumbnail.EndInit();
                 thumbnail.Freeze();
             }
-            catch (Exception ex) when (ex is FormatException or NotSupportedException or IOException) { }
+            catch (Exception ex) when (ex is FormatException or NotSupportedException or IOException or UnauthorizedAccessException) { }
         }
 
         var text = packet.Type switch
@@ -2495,7 +2637,7 @@ public partial class ChatRoomWindow : Window
         if (packet.Type is "text" or "file" or "image")
             sender += $" · {packet.SenderRole ?? "访客"}";
         if (!string.IsNullOrWhiteSpace(packet.SenderIp)) sender += $" · {packet.SenderIp}";
-        AddMessage(sender, text, packet.Type is "file" or "image" ? packet.FileName : null, thumbnail, attachmentData,
+        AddMessage(sender, text, packet.Type is "file" or "image" ? packet.FileName : null, thumbnail, attachmentPath,
             packet.MimeType, packet.Type == "system" ? null : author, packet.ReplySender, packet.ReplyText, packet.MessageId, packet.ReplyToId);
         if (packet.Type is "file" or "image") AppLog.Write($"附件进入收件列表：{packet.Type} · {packet.FileName ?? "(未命名)"} · 来自 {sender}。");
         if (packet.Type == "text" && !string.Equals(packet.Sender, _userName, StringComparison.OrdinalIgnoreCase) && MentionsUser(packet.Text, _userName))
@@ -2520,17 +2662,17 @@ public partial class ChatRoomWindow : Window
         return false;
     }
 
-    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, byte[]? data = null, string? mimeType = null, string? author = null, string? replySender = null, string? replyText = null, string? id = null, string? replyToId = null)
+    private void AddMessage(string sender, string text, string? attachment, BitmapImage? thumbnail, string? dataPath = null, string? mimeType = null, string? author = null, string? replySender = null, string? replyText = null, string? id = null, string? replyToId = null)
     {
         if (!Dispatcher.CheckAccess())
         {
             _ = Dispatcher.BeginInvoke(new Action(() =>
-                AddMessage(sender, text, attachment, thumbnail, data, mimeType, author, replySender, replyText, id, replyToId)));
+                AddMessage(sender, text, attachment, thumbnail, dataPath, mimeType, author, replySender, replyText, id, replyToId)));
             return;
         }
         id ??= NextMessageId();
         var displayText = attachment is null ? text : text;
-        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, data, mimeType, author, replySender, replyText, id, replyToId));
+        _messages.Add(new ChatMessage(sender, DateTime.Now.ToString("HH:mm"), displayText, attachment, thumbnail, dataPath, mimeType, author, replySender, replyText, id, replyToId));
         MessageScroll.ScrollToEnd();
     }
 
@@ -2612,6 +2754,13 @@ public partial class ChatRoomWindow : Window
         return null;
     }
 
+    /// <summary>日志里的文本去掉结尾标点，避免出现“加入了聊天室。。”这样的重复句号。</summary>
+    private static string TrimForLog(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "(无)";
+        return text.TrimEnd('。', '！', '？', '.', '!', '?', '；', ';', ' ', '\r', '\n');
+    }
+
     private static string GetImageMime(string extension) => extension.ToLowerInvariant() switch
     {
         ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".bmp" => "image/bmp", ".webp" => "image/webp", _ => "application/octet-stream"
@@ -2640,34 +2789,63 @@ public partial class ChatRoomWindow : Window
         if (_closingStarted) return;
         _closingStarted = true;
         _statusTimer.Stop();
-        var remoteIds = _remoteSessions.Keys.Concat(_localRemoteSessions.Keys).Concat(_remoteCaptures.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
-        foreach (var sessionId in remoteIds)
+        try
         {
-            await SendRemoteStopAsync(sessionId);
-            EndRemoteSessionLocally(sessionId);
+            var remoteIds = _remoteSessions.Keys.Concat(_localRemoteSessions.Keys).Concat(_remoteCaptures.Keys).Concat(_outgoingRemoteSessions.Keys).Distinct().ToArray();
+            foreach (var sessionId in remoteIds)
+            {
+                await SendRemoteStopAsync(sessionId);
+                EndRemoteSessionLocally(sessionId);
+            }
+            if (_listener is not null)
+            {
+                try
+                {
+                    await BroadcastAsync(new RoomPacket { Type = "host-closed", Room = _roomName, Text = "主机已关闭连接" }, _shutdown.Token);
+                    await Task.Delay(150);
+                }
+                catch (OperationCanceledException) { }
+                AppLog.Write($"房主关闭了聊天室“{_roomName}”。");
+            }
         }
-        if (_listener is not null)
+        catch (Exception ex)
+        {
+            // 关闭流程即使出错也必须走完，否则窗口会卡住关不掉。
+            AppLog.Write($"关闭聊天室时出现异常（已继续关闭）：{ex}");
+        }
+        finally
         {
             try
             {
-                await BroadcastAsync(new RoomPacket { Type = "host-closed", Room = _roomName, Text = "主机已关闭连接" }, _shutdown.Token);
-                await Task.Delay(150);
+                _shutdown.Cancel();
+                _listener?.Stop();
+                _discovery?.Dispose();
+                _upstream?.Dispose();
+                lock (_peerLock)
+                {
+                    foreach (var peer in _peers) peer.Client.Dispose();
+                    _peers.Clear();
+                }
+                AbortIncomingAttachments();
+                _attachments.Cleanup();
             }
-            catch (OperationCanceledException) { }
-            AppLog.Write($"房主关闭了聊天室“{_roomName}”。");
+            catch (Exception ex)
+            {
+                AppLog.Write($"释放聊天室资源时出现异常：{ex.Message}");
+            }
+            try { _shutdown.Dispose(); } catch (ObjectDisposedException) { }
+            _allowClose = true;
+            _ = Dispatcher.BeginInvoke(new Action(Close), DispatcherPriority.Background);
         }
-        _shutdown.Cancel();
-        _listener?.Stop();
-        _discovery?.Dispose();
-        _upstream?.Dispose();
-        lock (_peerLock)
+    }
+
+    /// <summary>放弃所有未接收完的附件并删除半成品文件。</summary>
+    private void AbortIncomingAttachments()
+    {
+        foreach (var key in _incomingAttachments.Keys.ToArray())
         {
-            foreach (var peer in _peers) peer.Client.Dispose();
-            _peers.Clear();
+            if (_incomingAttachments.TryRemove(key, out var accumulator)) accumulator.Dispose();
         }
-        _shutdown.Dispose();
-        _allowClose = true;
-        _ = Dispatcher.BeginInvoke(new Action(Close), DispatcherPriority.Background);
     }
 
     private sealed record Peer(TcpClient Client, NetworkStream Stream, string Name, string Ip)
@@ -2735,7 +2913,7 @@ public partial class ChatRoomWindow : Window
         public string? ReplyToId { get; set; }
     }
 
-    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, byte[]? Data, string? MimeType, string? Author = null, string? QuoteSender = null, string? QuoteText = null, string? Id = null, string? QuoteTargetId = null)
+    private sealed record ChatMessage(string Sender, string Time, string Text, string? Attachment, BitmapImage? Thumbnail, string? DataPath, string? MimeType, string? Author = null, string? QuoteSender = null, string? QuoteText = null, string? Id = null, string? QuoteTargetId = null)
     {
         public bool IsSystem => Sender == "系统";
         public string AttachmentLabel => Attachment is null ? string.Empty : $"📎 {Attachment}";
@@ -2745,33 +2923,65 @@ public partial class ChatRoomWindow : Window
         public string QuoteSenderLabel => QuoteSender ?? string.Empty;
     }
 
-    private sealed class AttachmentAccumulator
+    private sealed class AttachmentAccumulator : IDisposable
     {
-        private readonly byte[] _data;
+        private readonly FileStream _stream;
         private readonly bool[] _receivedChunks;
+        private readonly long _totalBytes;
+        private readonly byte[] _chunkBuffer = new byte[AttachmentChunkBytes];
         private int _received;
+        private bool _completed;
         public string? SenderIp { get; }
+        public string FilePath { get; }
 
-        public AttachmentAccumulator(RoomPacket firstPacket)
+        public AttachmentAccumulator(RoomPacket firstPacket, string filePath)
         {
             SenderIp = firstPacket.SenderIp;
-            _data = new byte[checked((int)firstPacket.TotalBytes)];
+            FilePath = filePath;
+            _totalBytes = firstPacket.TotalBytes;
             _receivedChunks = new bool[firstPacket.ChunkCount];
+            _stream = new FileStream(filePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read, 64 * 1024, useAsync: false);
+            _stream.SetLength(_totalBytes);
         }
 
-        public byte[]? Add(RoomPacket packet)
+        /// <summary>写入一个数据块；返回 true 表示所有块都已到齐。</summary>
+        public bool Add(RoomPacket packet, out string? reason)
         {
-            if (packet.ChunkCount != _receivedChunks.Length || packet.TotalBytes != _data.Length || packet.ChunkIndex < 0 || packet.ChunkIndex >= _receivedChunks.Length) return null;
-            byte[] chunk;
-            try { chunk = Convert.FromBase64String(packet.Data!); }
-            catch (FormatException) { return null; }
-            var offset = packet.ChunkIndex * AttachmentChunkBytes;
-            var expectedLength = Math.Min(AttachmentChunkBytes, _data.Length - offset);
-            if (chunk.Length != expectedLength || _receivedChunks[packet.ChunkIndex]) return null;
-            Buffer.BlockCopy(chunk, 0, _data, offset, chunk.Length);
+            reason = null;
+            if (_completed) { reason = "数据块重复"; return false; }
+            if (packet.ChunkCount != _receivedChunks.Length || packet.TotalBytes != _totalBytes ||
+                packet.ChunkIndex < 0 || packet.ChunkIndex >= _receivedChunks.Length)
+            {
+                reason = "数据块参数不一致";
+                return false;
+            }
+            var offset = (long)packet.ChunkIndex * AttachmentChunkBytes;
+            var expectedLength = (int)Math.Min(AttachmentChunkBytes, _totalBytes - offset);
+            // 直接把 Base64 解码进复用缓冲区，避免每个分块再分配一个大数组。
+            if (!Convert.TryFromBase64Chars(packet.Data.AsSpan(), _chunkBuffer, out var written) || written != expectedLength || _receivedChunks[packet.ChunkIndex])
+            {
+                reason = "数据块长度不符";
+                return false;
+            }
+            _stream.Position = offset;
+            _stream.Write(_chunkBuffer, 0, written);
             _receivedChunks[packet.ChunkIndex] = true;
             _received++;
-            return _received == _receivedChunks.Length ? _data : null;
+            if (_received < _receivedChunks.Length) return false;
+            _stream.Flush();
+            _stream.Dispose();
+            _completed = true;
+            return true;
+        }
+
+        /// <summary>放弃未完成的附件，删除半成品文件。</summary>
+        public void Dispose()
+        {
+            if (!_completed)
+            {
+                try { _stream.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+                try { File.Delete(FilePath); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
         }
     }
 }
