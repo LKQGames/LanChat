@@ -20,7 +20,7 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                     <TextBlock Text="1. 设置用户名" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" />
-                    <TextBlock Text="在主页点击“输入用户名”设置显示名称。加入或创建房间前必须先设置用户名。" TextWrapping="Wrap" Margin="0,7,0,18" />
+                    <TextBlock Text="在主页点击“输入用户名”设置显示名称。加入或创建房间前必须先设置用户名。同一聊天室内用户名不能重复（不区分大小写，也不能与房主同名），重名时会拒绝加入并提示更换用户名。" TextWrapping="Wrap" Margin="0,7,0,18" />
 
                     <TextBlock Text="2. 创建聊天室" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" />
                     <TextBlock Text="点击“新建聊天室”，填写房间名与端口并选择公开/私密；密码可留空。公开房间可通过局域网搜索发现；私密房间不会响应搜索，只能手动输入房间名、房主 IPv4 地址、端口和密码加入。聊天使用你填写的 TCP 端口。创建者成为房主，其他设备需在同一局域网中，并允许程序通过 Windows 防火墙通信。" TextWrapping="Wrap" Margin="0,7,0,18" />
@@ -45,7 +45,7 @@
                         </TextBlock>
                     </Border>
                     <TextBlock Text="聊天窗口的“成员列表”可折叠显示房间成员，并通过右键菜单复制用户名/IP 或执行禁言、踢出、封禁操作。“封禁列表”可查看当前房间的封禁项并解除用户或 IP 封禁。成员和封禁信息仅在房间运行期间有效。" TextWrapping="Wrap" Margin="0,10,0,0" />
-                    <TextBlock Text="房主可以在成员列表右键“设为管理员”，该成员的访客头衔会变为管理员并获得与房主相同的管理权限：禁言、踢出、封禁、查看封禁列表（已设为管理员的成员，菜单会变为“取消管理员”）。管理员只能管理访客，不能对房主、其他管理员和自己进行管理操作。" TextWrapping="Wrap" Margin="0,7,0,0" />
+                    <TextBlock Text="房主可以在成员列表右键“设为管理员”，该成员的访客头衔会变为管理员并获得与房主相同的管理权限：禁言、踢出、封禁、查看封禁列表（已设为管理员的成员，菜单会变为“取消管理员”）。管理员只能管理访客，不能对房主、其他管理员和自己进行管理操作。管理员离开房间后权限会自动收回，需要用同一用户名重新加入时需由房主再次授权。" TextWrapping="Wrap" Margin="0,7,0,0" />
                     <TextBlock Text="禁言和封禁仅在当前房间运行期间有效。房间关闭后会清除。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,9,0,0" />
 
                     <TextBlock Text="10. 房间成员身份与移出提示" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
@@ -60,6 +60,9 @@
 
                     <TextBlock Text="12. 艾特与引用回复" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="在输入框输入 @ 会自动列出房间成员，用上下键选择后按 Enter（或直接用鼠标点击）即可插入蓝色的 @用户名；也可以在成员列表右键选择“艾特 TA”直接插入。被艾特的成员会收到 Windows 通知提示“您被 xxx 艾特了”。在收到的消息上点右键，可以选择“复制消息”或“回复消息”；回复时会自动引用原消息并在输入框补上 @对方，发送后引用内容显示在消息上方；点击引用块可跳转并高亮被引用的原消息。" TextWrapping="Wrap" Margin="0,7,0,0" />
+
+                    <TextBlock Text="13. 检查更新" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="主页右上角的“检查更新”会读取 GitHub 上的已构建版本并与当前版本比较：已是最新会提示版本号；发现新版本时会询问是否下载，选“是”会用默认浏览器打开下载页面，选“否”可继续使用。程序启动时也会静默检查一次，失败或已是最新都不会打扰你。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
                     <TextBlock Text="6. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="每个页面都可单独点击“📌 置顶”，让当前窗口保持在其他窗口上方；取消勾选即可恢复普通层级。" TextWrapping="Wrap" Margin="0,7,0,0" />

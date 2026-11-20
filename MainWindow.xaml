@@ -15,6 +15,7 @@
                 <TextBlock Text="和同一局域网中的朋友轻松交流" FontSize="13" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="UpdateButton" Content="检查更新" Click="UpdateButton_Click" Background="#252A35" Foreground="#C2D2F5" Padding="15,9" Margin="0,0,9,0" />
                 <Button x:Name="HelpButton" Content="帮助" Click="HelpButton_Click" Background="#252A35" Foreground="#C2D2F5" Padding="15,9" Margin="0,0,9,0" />
                 <ToggleButton x:Name="LogToggle" Content="运行日志" Background="#252A35" Foreground="#C2D2F5" Padding="12,9" Margin="0,0,9,0" Checked="LogToggle_Checked" Unchecked="LogToggle_Unchecked" />
                 <ToggleButton Content="📌 置顶" Background="#252A35" Foreground="#C2D2F5" Padding="12,9" Margin="0,0,9,0" Checked="Pin_Checked" Unchecked="Pin_Unchecked" />

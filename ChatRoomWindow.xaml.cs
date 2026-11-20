@@ -26,6 +26,7 @@ public partial class ChatRoomWindow : Window
     private const long MaxAttachmentBytes = 1024L * 1024 * 1024;
     private const int AttachmentChunkBytes = 512 * 1024;
     private const int MaxAttachmentChunks = 4096;
+    private const int MaxConcurrentTransfersPerPeer = 4;
     private const string MaxAttachmentText = "1 GB";
     private readonly string _roomName;
     private readonly string _password;
@@ -55,7 +56,6 @@ public partial class ChatRoomWindow : Window
     private readonly HashSet<string> _kickedNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _kickedIps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _adminNames = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _adminIps = new(StringComparer.OrdinalIgnoreCase);
     private string _myRole = "访客";
     private string _muteActor = "房主";
     private RoomMember? _contextMember;
@@ -347,7 +347,19 @@ public partial class ChatRoomWindow : Window
                     });
                     return;
                 }
-                if (packet.Type is "removed" or "error")
+                if (packet.Type == "error")
+                {
+                    // 房主拒绝加入（重名、密码错误、被封禁等）：提示原因并关闭房间窗口。
+                    var reason = string.IsNullOrWhiteSpace(packet.Text) ? "无法加入房间" : packet.Text;
+                    AppLog.Write($"房间拒绝加入：{reason}。");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        new RoomAccessNoticeWindow(reason) { Owner = this }.ShowDialog();
+                        Close();
+                    });
+                    return;
+                }
+                if (packet.Type == "removed")
                 {
                     var reason = packet.Text ?? "您已被移出聊天室";
                     if (IsAccessActionNotice(reason))
@@ -533,13 +545,26 @@ public partial class ChatRoomWindow : Window
             }
 
             var peerIp = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.MapToIPv4().ToString();
-            var peerName = string.IsNullOrWhiteSpace(hello.Sender) ? "访客" : hello.Sender;
+            var peerName = string.IsNullOrWhiteSpace(hello.Sender) ? "访客" : hello.Sender.Trim();
+            if (!IsValidPeerName(peerName))
+            {
+                const string invalidName = "用户名不合法：长度需为 1-32 个字符，且不能包含空格或控制字符。";
+                AppLog.Write($"拒绝 {client.Client.RemoteEndPoint} 的加入请求：{invalidName}");
+                await WritePacketAsync(stream, new RoomPacket { Type = "error", Text = invalidName }, cancellationToken);
+                return;
+            }
             string? denial = null;
             lock (_peerLock)
             {
+                // 先把已经断开的旧连接清掉，避免同一个人短暂重连时被自己挡住。
+                PruneDeadPeers();
                 if (_ipBannedIps.Contains(peerIp)) denial = "您的 IP 已被封禁";
                 else if (_bannedIps.Contains(peerIp) || _bannedNames.Contains(peerName)) denial = "您已被封禁";
                 else if (_kickedIps.Contains(peerIp) || _kickedNames.Contains(peerName)) denial = "您已被踢出聊天室";
+                else if (string.Equals(peerName, _userName, StringComparison.OrdinalIgnoreCase))
+                    denial = $"用户名“{peerName}”已被房主使用，请更换用户名后重试";
+                else if (_peers.Any(p => p.Name.Equals(peerName, StringComparison.OrdinalIgnoreCase)))
+                    denial = $"用户名“{peerName}”已在房间中，请更换用户名后重试";
             }
             if (denial is not null)
             {
@@ -606,7 +631,8 @@ public partial class ChatRoomWindow : Window
                 packet.SenderRole = RoleOf(peer);
                 packet.SenderIp = peer.Ip;
                 // 旧版本对端可能没有带消息 ID，由房主补上，保证所有成员都能互相跳转引用。
-                packet.MessageId ??= NextMessageId();
+                // 消息 ID 一律由房主生成，避免成员伪造或复用别人的 ID 干扰引用跳转。
+                packet.MessageId = NextMessageId();
                 await BroadcastAsync(packet, cancellationToken);
                 if (packet.Type == "attachment-chunk")
                 {
@@ -649,6 +675,22 @@ public partial class ChatRoomWindow : Window
                 foreach (var transfer in _incomingAttachments.Where(entry => entry.Value.SenderIp == peer.Ip).Select(entry => entry.Key).ToArray())
                 {
                     if (_incomingAttachments.TryRemove(transfer, out var abandoned)) abandoned.Dispose();
+                }
+                // 管理员身份与用户名绑定，人离开即撤销，防止同名新人继承管理员权限。
+                bool wasAdmin;
+                lock (_peerLock) wasAdmin = _adminNames.Remove(peer.Name);
+                if (wasAdmin)
+                {
+                    AppLog.Write($"管理员 {peer.Name} 已离开，管理员权限已自动收回。");
+                    try
+                    {
+                        await BroadcastAsync(new RoomPacket
+                        {
+                            Type = "member-role", Room = _roomName, Sender = peer.Name, SenderIp = peer.Ip, SenderRole = "访客"
+                        }, cancellationToken);
+                    }
+                    catch (OperationCanceledException) { }
+                    try { await Dispatcher.InvokeAsync(() => AddMessage("系统", $"{peer.Name} 已离开，管理员权限已自动收回。", null, null)); } catch (InvalidOperationException) { }
                 }
                 try
                 {
@@ -953,10 +995,9 @@ public partial class ChatRoomWindow : Window
         if (TargetsHost(target)) return denied;
         lock (_peerLock)
         {
-            // 优先按用户名判定：同一公网 IP 下可能有多名成员，不能因为 IP 相同就拒绝。
+            // 按用户名判定：同一出口 IP 下可能有多名成员，不能因为 IP 相同就当成管理员。
             var peer = _peers.FirstOrDefault(p => p.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
             if (peer is not null) return _adminNames.Contains(peer.Name) ? denied : null;
-            if (IPAddress.TryParse(target, out _) && _adminIps.Contains(target)) return denied;
         }
         return null;
     }
@@ -1190,18 +1231,23 @@ public partial class ChatRoomWindow : Window
 
     private async Task SetAdminAsync(RoomMember member, bool makeAdmin)
     {
+        if (makeAdmin)
+        {
+            // 只为当前在线成员授予权限，避免给一个已离开的名字留下可被顶替的管理员身份。
+            lock (_peerLock)
+            {
+                if (!_peers.Any(p => p.Name.Equals(member.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    AddMessage("系统", $"{member.Name} 已不在房间中，无法设为管理员。", null, null);
+                    return;
+                }
+            }
+        }
+        // 只按用户名识别管理员：按 IP 判定会让同一出口 IP 的其他成员获得管理权限。
         lock (_peerLock)
         {
-            if (makeAdmin)
-            {
-                _adminNames.Add(member.Name);
-                _adminIps.Add(member.Ip);
-            }
-            else
-            {
-                _adminNames.Remove(member.Name);
-                _adminIps.Remove(member.Ip);
-            }
+            if (makeAdmin) _adminNames.Add(member.Name);
+            else _adminNames.Remove(member.Name);
         }
         var role = makeAdmin ? "管理员" : "访客";
         var index = _members.IndexOf(member);
@@ -1217,14 +1263,12 @@ public partial class ChatRoomWindow : Window
 
     private string RoleOf(Peer peer)
     {
-        lock (_peerLock)
-            return _adminNames.Contains(peer.Name) || _adminIps.Contains(peer.Ip) ? "管理员" : "访客";
+        lock (_peerLock) return _adminNames.Contains(peer.Name) ? "管理员" : "访客";
     }
 
     private bool IsPeerAdmin(Peer peer)
     {
-        lock (_peerLock)
-            return _adminNames.Contains(peer.Name) || _adminIps.Contains(peer.Ip);
+        lock (_peerLock) return _adminNames.Contains(peer.Name);
     }
 
     private async Task HandleAdminPacketAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
@@ -1944,6 +1988,46 @@ public partial class ChatRoomWindow : Window
             .Any(a => a.Address.AddressFamily == AddressFamily.InterNetwork && a.Address.ToString() == address);
     }
 
+    /// <summary>
+    /// 用户名校验：限制长度并禁止空白和控制字符。
+    /// 允许空格会让 /mute 这类指令无法唯一定位目标，也容易被用来伪装成别人的名字。
+    /// </summary>
+    internal static bool IsValidPeerName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        if (name.Length is < 1 or > 32) return false;
+        foreach (var character in name)
+        {
+            if (char.IsWhiteSpace(character) || char.IsControl(character)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>清理已经关闭的成员连接（在锁内调用）。</summary>
+    private void PruneDeadPeers()
+    {
+        foreach (var peer in _peers.Where(IsPeerDead).ToArray())
+        {
+            _peers.Remove(peer);
+            AppLog.Write($"已清理断开的成员连接：{peer.Name} ({peer.Ip})。");
+        }
+    }
+
+    private static bool IsPeerDead(Peer peer)
+    {
+        try
+        {
+            var socket = peer.Client.Client;
+            if (socket is null) return true;
+            // 可读且没有待读数据说明对端已关闭连接。
+            return socket.Poll(0, SelectMode.SelectRead) && socket.Available == 0;
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException or NullReferenceException)
+        {
+            return true;
+        }
+    }
+
     private Peer? FindPeer(string ip)
     {
         lock (_peerLock) return _peers.FirstOrDefault(peer => peer.Ip.Equals(ip, StringComparison.OrdinalIgnoreCase));
@@ -2216,6 +2300,12 @@ public partial class ChatRoomWindow : Window
         var transferKey = $"{packet.SenderIp}:{packet.TransferId}";
         if (!_incomingAttachments.TryGetValue(transferKey, out var accumulator))
         {
+            // 限制单个成员同时进行的附件传输数量，避免恶意客户端用大量传输占满磁盘。
+            if (_incomingAttachments.Count(entry => entry.Value.SenderIp == packet.SenderIp) >= MaxConcurrentTransfersPerPeer)
+            {
+                AppLog.Write($"来自 {packet.SenderIp} 的附件传输过多，已忽略新的传输 {packet.TransferId}。");
+                return null;
+            }
             AttachmentAccumulator created;
             try
             {

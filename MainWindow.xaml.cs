@@ -10,6 +10,7 @@ public partial class MainWindow : Window
 {
     private string? _currentUsername;
     private LoggerWindow? _loggerWindow;
+    private int _updateCheckRunning;
 
     private void Pin_Checked(object sender, RoutedEventArgs e) => Topmost = true;
     private void Pin_Unchecked(object sender, RoutedEventArgs e) => Topmost = false;
@@ -18,6 +19,87 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Closed += (_, _) => _loggerWindow?.Close();
+        // 启动时静默检查一次：失败或已是最新都不打扰用户。
+        Loaded += (_, _) => _ = CheckForUpdatesAsync(silent: true);
+    }
+
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync(silent: false);
+
+    /// <summary>
+    /// 检查 GitHub 上的已构建版本。silent=true 时仅在发现新版本才提示，
+    /// 失败或已是最新都保持安静。
+    /// </summary>
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        if (Interlocked.Exchange(ref _updateCheckRunning, 1) == 1) return;
+
+        // 检查过程跨线程，所有界面操作都回到 UI 线程执行。
+        void Ui(Action action)
+        {
+            if (Dispatcher.CheckAccess()) action();
+            else if (!Dispatcher.HasShutdownStarted) Dispatcher.Invoke(action);
+        }
+
+        Ui(() =>
+        {
+            if (silent) return;
+            UpdateButton.IsEnabled = false;
+            UpdateButton.Content = "检查中…";
+        });
+        try
+        {
+            AppLog.Write(silent ? "开始静默检查更新。" : "用户点击检查更新。");
+            var result = await UpdateChecker.CheckAsync().ConfigureAwait(false);
+            var current = UpdateChecker.CurrentVersion;
+
+            if (!result.Succeeded)
+            {
+                AppLog.Write($"检查更新未完成：{result.Error}");
+                if (!silent)
+                    Ui(() => MessageBox.Show(this, $"检查更新失败：{result.Error}", "检查更新", MessageBoxButton.OK, MessageBoxImage.Warning));
+                return;
+            }
+
+            if (!result.HasUpdate)
+            {
+                AppLog.Write($"已是最新版本：当前 v{current}，GitHub 最新 v{result.LatestVersion}。");
+                if (!silent)
+                    Ui(() => MessageBox.Show(this, $"您已是最新版本。\n\n当前版本：v{current}\nGitHub 最新：v{result.LatestVersion}",
+                        "检查更新", MessageBoxButton.OK, MessageBoxImage.Information));
+                return;
+            }
+
+            AppLog.Write($"发现新版本：当前 v{current}，GitHub v{result.LatestVersion}（{result.Tag}）。");
+            var open = false;
+            Ui(() => open = MessageBox.Show(this,
+                $"发现新版本 v{result.LatestVersion}（当前 v{current}）。\n\n是否前往下载最新版？\n将在默认浏览器中打开下载页面。",
+                "发现新版本", MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes) == MessageBoxResult.Yes);
+            if (!open)
+            {
+                AppLog.Write("用户选择暂不更新。");
+                return;
+            }
+            if (result.DownloadUrl is not null && UpdateChecker.OpenDownloadPage(result.DownloadUrl)) return;
+            Ui(() => MessageBox.Show(this, "无法自动打开浏览器，请手动访问：\nhttps://github.com/LKQGames/LanChat/releases/latest",
+                "检查更新", MessageBoxButton.OK, MessageBoxImage.Information));
+        }
+        catch (Exception ex)
+        {
+            // 更新检查属于辅助功能，任何异常都不应影响正常使用。
+            AppLog.Write($"检查更新出现异常：{ex}");
+            if (!silent)
+                Ui(() => MessageBox.Show(this, $"检查更新失败：{ex.Message}", "检查更新", MessageBoxButton.OK, MessageBoxImage.Warning));
+        }
+        finally
+        {
+            Ui(() =>
+            {
+                if (silent) return;
+                UpdateButton.Content = "检查更新";
+                UpdateButton.IsEnabled = true;
+            });
+            Interlocked.Exchange(ref _updateCheckRunning, 0);
+        }
     }
 
     private void LogToggle_Checked(object sender, RoutedEventArgs e)

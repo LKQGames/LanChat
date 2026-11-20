@@ -20,9 +20,17 @@ public partial class UsernameWindow : Window
 
     private void Confirm_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(Username))
+        var name = Username;
+        if (string.IsNullOrWhiteSpace(name))
         {
             ValidationText.Text = "请输入用户名后再确定。";
+            ValidationText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            UsernameInput.Focus();
+            return;
+        }
+        if (!ChatRoomWindow.IsValidPeerName(name))
+        {
+            ValidationText.Text = "用户名需为 1-32 个字符，且不能包含空格或控制字符。";
             ValidationText.Foreground = System.Windows.Media.Brushes.Firebrick;
             UsernameInput.Focus();
             return;
