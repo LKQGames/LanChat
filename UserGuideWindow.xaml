@@ -48,35 +48,35 @@
                     <TextBlock Text="房主可以在成员列表右键“设为管理员”，该成员的访客头衔会变为管理员并获得与房主相同的管理权限：禁言、踢出、封禁、查看封禁列表（已设为管理员的成员，菜单会变为“取消管理员”）。管理员只能管理访客，不能对房主、其他管理员和自己进行管理操作。管理员离开房间后权限会自动收回，需要用同一用户名重新加入时需由房主再次授权。" TextWrapping="Wrap" Margin="0,7,0,0" />
                     <TextBlock Text="禁言和封禁仅在当前房间运行期间有效。房间关闭后会清除。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,9,0,0" />
 
-                    <TextBlock Text="10. 房间成员身份与移出提示" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="6. 房间成员身份与移出提示" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="聊天消息会标记创建者或访客。成员被踢出、封禁或 IP 封禁时会收到对应弹窗；之后尝试重新加入也会收到相同原因提示。相关限制仅在房间本次运行期间有效。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="11. 远程控制" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="7. 远程控制" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="在成员列表中右键选择“请求远程控制”。对方在 LanChat 中明确接受后，LanChat 会自动在被控端开启 RustDesk 的“直接 IP 访问”（TCP 21118）并启动内置的 RustDesk 1.5.3；随后控制端会询问连接方式：“局域网 IP 直连”适合双方在同一网段，速度最快；“RustDesk ID 连接”适合异地或跨网络，双方都需要能访问 RustDesk 公共服务器。选定后 RustDesk 会直接弹出连接窗口（后台主窗口已隐藏）。屏幕采集、键鼠操作和远控会话全部由 RustDesk 原生客户端处理，聊天室只负责申请、同意和结束信号。若 RustDesk 提示输入密码，请向对方索取其 RustDesk 主窗口显示的临时密码。关闭 RustDesk 窗口或点击聊天室中的结束按钮可结束远控。" TextWrapping="Wrap" Margin="0,7,0,8" />
                     <Border Background="#252932" CornerRadius="14" Padding="13" Margin="0,0,0,8">
                         <TextBlock Text="首次被控时，Windows 可能弹出防火墙询问，请允许 RustDesk 通过专用网络；在可信任局域网中只需同意一次。被控端已手动开启“直接 IP 访问”时，LanChat 会直接复用该设置，不会改动它。RustDesk 官方说明直接 IP 模式未加密；仅在可信任的局域网使用，避免传输敏感内容。若不愿接受未加密直连，请勿继续连接。" TextWrapping="Wrap" Foreground="#FFD180" FontSize="12" />
                     </Border>
                     <TextBlock Text="RustDesk 是单独启动的原版客户端，不是嵌入 LanChat 窗口的控件。按 AGPL-3.0 分发；许可证全文与对应的 1.5.3 源码压缩包均内置于本程序，可通过下方按钮导出。版本及源码：https://github.com/rustdesk/rustdesk/tree/1.5.3。" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="12" />
 
-                    <TextBlock Text="12. 艾特与引用回复" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="8. 艾特与引用回复" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="在输入框输入 @ 会自动列出房间成员，用上下键选择后按 Enter（或直接用鼠标点击）即可插入蓝色的 @用户名；也可以在成员列表右键选择“艾特 TA”直接插入。被艾特的成员会收到 Windows 通知提示“您被 xxx 艾特了”。在收到的消息上点右键，可以选择“复制消息”或“回复消息”；回复时会自动引用原消息并在输入框补上 @对方，发送后引用内容显示在消息上方；点击引用块可跳转并高亮被引用的原消息。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="13. 检查更新" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="9. 检查更新" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="主页右上角的“检查更新”会读取 GitHub 上的已构建版本并与当前版本比较：已是最新会提示版本号；发现新版本时会询问是否下载，选“是”会用默认浏览器打开下载页面，选“否”可继续使用。程序启动时也会静默检查一次，失败或已是最新都不会打扰你。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="14. 传输加密" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="10. 传输加密" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="客户端与房主建立连接时会先用 ECDH（P-256）协商出会话密钥，之后的聊天消息、附件、管理指令全部使用 AES-256-GCM 加密传输（每帧带认证标签，被篡改会立即断开）。密钥每次连接都重新生成，退出即失效。若房主仍在使用旧版本客户端，程序会自动回退为明文并在聊天区提示；建议同一局域网内都升级到最新版本。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="6. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="11. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="每个页面都可单独点击“📌 置顶”，让当前窗口保持在其他窗口上方；取消勾选即可恢复普通层级。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="7. 入房提示与主机关闭" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="12. 入房提示与主机关闭" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="成员加入时，房间内会显示用户名和内网 IPv4 地址。房主关闭聊天室后，其他成员会看到“主机已关闭连接”提示；点击确定或等待 5 秒，聊天室窗口会自动关闭。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="8. 实时运行日志" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="13. 实时运行日志" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="在主页打开“运行日志”开关，可显示独立日志窗口并实时查看房间创建与加入、聊天消息、附件操作和连接状态。关闭开关或日志窗口即可停止显示。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
-                    <TextBlock Text="9. 自动保存运行日志" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="14. 自动保存运行日志" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="程序从启动时会在后台持续记录操作事件、实时房间/连接状态、监听与发现活动、消息和附件收发、异常信息及周期状态快照。退出时会在程序所在目录下的 logs 文件夹生成独立的 LanChat-runtime-时间戳.txt 文件；此文件与用户通过“保存日志”主动导出的文件分开。" TextWrapping="Wrap" Margin="0,7,0,0" />
                 </StackPanel>
             </ScrollViewer>
