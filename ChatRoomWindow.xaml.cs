@@ -24,16 +24,19 @@ namespace LanChat;
 public partial class ChatRoomWindow : Window
 {
     private const long MaxAttachmentBytes = 1024L * 1024 * 1024;
-    private const int AttachmentChunkBytes = 512 * 1024;
+    private const int AttachmentChunkBytes = 2 * 1024 * 1024;
     private const int MaxAttachmentChunks = 4096;
-    private const int MaxConcurrentTransfersPerPeer = 4;
+    private const int MaxConcurrentTransfersPerPeer = 2;
     private const string MaxAttachmentText = "1 GB";
     private readonly string _roomName;
     private readonly string _password;
     private readonly string _userName;
     private readonly TcpListener? _listener;
-    private readonly TcpClient? _upstream;
-    private readonly NetworkStream? _upstreamStream;
+    private TcpClient? _upstream;
+    private NetworkStream? _upstreamStream;
+    private SecureChannel? _upstreamChannel;
+    private string _serverHost = string.Empty;
+    private int _serverPort;
     private readonly UdpClient? _discovery;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly List<Peer> _peers = new();
@@ -269,18 +272,64 @@ public partial class ChatRoomWindow : Window
         _upstream = new TcpClient();
         _upstream.Connect(host, port);
         _upstreamStream = _upstream.GetStream();
+        _upstreamChannel = new SecureChannel(_upstreamStream);
+        _serverHost = host;
+        _serverPort = port;
         MessagesList.ItemsSource = _messages;
         MembersList.ItemsSource = _members;
         RoomTitle.Text = roomName;
         RoomSubtitle.Text = $"{host}:{port} · 正在连接";
         _serverEndpoint = $"{host}:{port}";
-        var writer = new StreamWriter(_upstreamStream, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
-        writer.WriteLine(JsonSerializer.Serialize(new RoomPacket { Type = "join", Room = roomName, Password = password, Sender = _userName }));
-        _ = ReadServerAsync(_upstreamStream, _shutdown.Token);
-        _lastServerHeartbeatTicks = DateTime.UtcNow.Ticks;
-        _ = MonitorServerHeartbeatAsync(_shutdown.Token);
+        _ = InitializeGuestSessionAsync();
         AppLog.Write($"正在连接聊天室“{roomName}”：{host}:{port}。");
         TrackMemberNames();
+    }
+
+    /// <summary>先协商 AES 加密通道，再发送加入请求并开始接收房主数据。</summary>
+    private async Task InitializeGuestSessionAsync()
+    {
+        try
+        {
+            var channel = _upstreamChannel!;
+            var encrypted = await channel.NegotiateAsClientAsync(TimeSpan.FromSeconds(2.5), _shutdown.Token);
+            if (encrypted)
+            {
+                AppLog.Write($"已建立 {SecureChannel.EncryptionDescription} 加密通道：{_serverEndpoint}。");
+            }
+            else if (!_upstreamClosed)
+            {
+                // 房主是旧版本：换一条新连接改用明文，保证仍然可以加入。
+                AppLog.Write("房主未启用加密握手，改用明文连接。");
+                channel.Dispose();
+                _upstreamChannel?.Dispose();
+                _upstream?.Dispose();
+                _upstream = new TcpClient();
+                await _upstream.ConnectAsync(_serverHost, _serverPort, _shutdown.Token);
+                _upstreamStream = _upstream.GetStream();
+                channel = new SecureChannel(_upstreamStream);
+                _upstreamChannel = channel;
+                await Dispatcher.InvokeAsync(() => AddMessage("系统",
+                    "提示：当前主机版本不支持加密，本次会话内容为明文传输。建议让房主升级到最新版本。", null, null));
+            }
+            await channel.WriteLineAsync(JsonSerializer.Serialize(new RoomPacket
+            {
+                Type = "join", Room = _roomName, Password = _password, Sender = _userName
+            }), _shutdown.Token);
+            _ = ReadServerAsync(channel, _shutdown.Token);
+            Interlocked.Exchange(ref _lastServerHeartbeatTicks, DateTime.UtcNow.Ticks);
+            _ = MonitorServerHeartbeatAsync(_shutdown.Token);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException or InvalidOperationException)
+        {
+            AppLog.Write($"建立聊天室连接失败：{ex.Message}");
+            MarkUpstreamClosed(ex);
+            try
+            {
+                await Dispatcher.InvokeAsync(() => AddMessage("系统", $"无法建立与房间主机的连接：{ex.Message}", null, null));
+            }
+            catch (InvalidOperationException) { }
+        }
     }
 
     private async Task AnswerDiscoveryAsync(CancellationToken cancellationToken)
@@ -314,14 +363,13 @@ public partial class ChatRoomWindow : Window
         catch (Exception ex) { AppLog.Write($"局域网发现服务异常：{ex}"); }
     }
 
-    private async Task ReadServerAsync(NetworkStream stream, CancellationToken cancellationToken)
+    private async Task ReadServerAsync(SecureChannel channel, CancellationToken cancellationToken)
     {
         try
         {
-            using var reader = new StreamReader(stream, new UTF8Encoding(false), false, 4096, true);
             while (!cancellationToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
+                var line = await channel.ReadLineAsync(cancellationToken);
                 if (line is null) break;
                 var packet = JsonSerializer.Deserialize<RoomPacket>(line);
                 if (packet is null) continue;
@@ -523,24 +571,43 @@ public partial class ChatRoomWindow : Window
     private async Task HandlePeerAsync(TcpClient client, CancellationToken cancellationToken)
     {
         Peer? peer = null;
+        SecureChannel? channel = null;
         try
         {
             client.NoDelay = true;
-            var stream = client.GetStream();
-            using var reader = new StreamReader(stream, new UTF8Encoding(false), false, 4096, true);
-            var firstLine = await reader.ReadLineAsync(cancellationToken);
-            if (firstLine is null) return;
+            channel = new SecureChannel(client.GetStream());
+            var firstLine = await channel.ReadLineAsync(cancellationToken);
+            if (firstLine is null) { channel.Dispose(); return; }
+            var handshake = SecureChannel.TryParseHandshake(firstLine);
+            if (handshake is not null)
+            {
+                if (!await channel.NegotiateAsServerAsync(handshake, cancellationToken))
+                {
+                    AppLog.Write($"拒绝 {client.Client.RemoteEndPoint} 的连接：加密握手参数无效。");
+                    return;
+                }
+                AppLog.Write($"已与 {client.Client.RemoteEndPoint} 建立 {SecureChannel.EncryptionDescription} 加密通道。");
+                firstLine = await channel.ReadLineAsync(cancellationToken);
+                if (firstLine is null) return;
+            }
+            else
+            {
+                AppLog.Write($"{client.Client.RemoteEndPoint} 使用旧版明文协议连接（未加密）。");
+                // 用 BeginInvoke 异步提示：不能在这里 await UI 线程，否则界面弹窗时会把接入流程卡住。
+                Dispatcher.BeginInvoke(new Action(() => AddMessage("系统",
+                    $"{client.Client.RemoteEndPoint} 使用旧版客户端连接，该连接未加密；建议对方升级到最新版本。", null, null)));
+            }
             var hello = JsonSerializer.Deserialize<RoomPacket>(firstLine);
             if (hello is null || hello.Type is not ("join" or "validate") || hello.Room != _roomName)
             {
                 AppLog.Write($"拒绝 {client.Client.RemoteEndPoint} 的请求：房间名不匹配或请求格式无效。");
-                await WritePacketAsync(stream, new RoomPacket { Type = "error", Text = "房间名错误或聊天室不存在。" }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "error", Text = "房间名错误或聊天室不存在。" }, cancellationToken);
                 return;
             }
             if (hello.Password != _password)
             {
                 AppLog.Write($"拒绝 {client.Client.RemoteEndPoint} 的加入请求：密码错误。");
-                await WritePacketAsync(stream, new RoomPacket { Type = "error", Text = "密码错误" }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "error", Text = "密码错误" }, cancellationToken);
                 return;
             }
 
@@ -550,7 +617,7 @@ public partial class ChatRoomWindow : Window
             {
                 const string invalidName = "用户名不合法：长度需为 1-32 个字符，且不能包含空格或控制字符。";
                 AppLog.Write($"拒绝 {client.Client.RemoteEndPoint} 的加入请求：{invalidName}");
-                await WritePacketAsync(stream, new RoomPacket { Type = "error", Text = invalidName }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "error", Text = invalidName }, cancellationToken);
                 return;
             }
             string? denial = null;
@@ -569,23 +636,23 @@ public partial class ChatRoomWindow : Window
             if (denial is not null)
             {
                 AppLog.Write($"拒绝成员 {peerName} ({peerIp})：{denial}。");
-                await WritePacketAsync(stream, new RoomPacket { Type = "error", Text = denial }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "error", Text = denial }, cancellationToken);
                 return;
             }
             if (hello.Type == "validate")
             {
                 AppLog.Write($"加入预验证成功：{peerName} ({peerIp})。");
-                await WritePacketAsync(stream, new RoomPacket { Type = "joined", Room = _roomName, Text = "验证成功" }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "joined", Room = _roomName, Text = "验证成功" }, cancellationToken);
                 return;
             }
-            peer = new Peer(client, stream, peerName, peerIp);
+            peer = new Peer(client, channel, peerName, peerIp);
             lock (_peerLock) _peers.Add(peer);
-            await WritePacketAsync(stream, new RoomPacket { Type = "joined", Room = _roomName, Text = "已加入聊天室" }, cancellationToken);
+            await WritePacketAsync(channel, new RoomPacket { Type = "joined", Room = _roomName, Text = "已加入聊天室" }, cancellationToken);
             Peer[] existing;
             lock (_peerLock) existing = _peers.Where(p => !ReferenceEquals(p, peer)).ToArray();
-            await WritePacketAsync(stream, new RoomPacket { Type = "member-joined", Sender = _userName, SenderIp = GetLocalPrivateIpv4(), SenderRole = "创建者" }, cancellationToken);
+            await WritePacketAsync(channel, new RoomPacket { Type = "member-joined", Sender = _userName, SenderIp = GetLocalPrivateIpv4(), SenderRole = "创建者" }, cancellationToken);
             foreach (var existingPeer in existing)
-                await WritePacketAsync(stream, new RoomPacket { Type = "member-joined", Sender = existingPeer.Name, SenderIp = existingPeer.Ip, SenderRole = RoleOf(existingPeer) }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "member-joined", Sender = existingPeer.Name, SenderIp = existingPeer.Ip, SenderRole = RoleOf(existingPeer) }, cancellationToken);
             await BroadcastAsync(new RoomPacket { Type = "member-joined", Sender = peer.Name, SenderIp = peer.Ip, SenderRole = RoleOf(peer) }, cancellationToken);
             await Dispatcher.InvokeAsync(() => _members.Add(new RoomMember(peer.Name, peer.Ip, RoleOf(peer))));
             var joinNotice = new RoomPacket { Type = "system", Room = _roomName, Text = $"{peer.Name} · {peer.Ip} 加入了聊天室。" };
@@ -595,11 +662,11 @@ public partial class ChatRoomWindow : Window
             bool initiallyMuted;
             lock (_peerLock) initiallyMuted = _mutedNames.Contains(peer.Name) || _mutedIps.Contains(peer.Ip);
             if (initiallyMuted)
-                await WritePacketAsync(stream, new RoomPacket { Type = "mute-state", Text = "muted" }, cancellationToken);
+                await WritePacketAsync(channel, new RoomPacket { Type = "mute-state", Text = "muted" }, cancellationToken);
 
             while (!cancellationToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
+                var line = await channel.ReadLineAsync(cancellationToken);
                 if (line is null) break;
                 var packet = JsonSerializer.Deserialize<RoomPacket>(line);
                 if (packet is null) continue;
@@ -623,7 +690,7 @@ public partial class ChatRoomWindow : Window
                 lock (_peerLock) muted = _mutedNames.Contains(peer.Name) || _mutedIps.Contains(peer.Ip);
                 if (muted)
                 {
-                    await WritePacketAsync(stream, new RoomPacket { Type = "system", Text = "你当前已被房主禁言。" }, cancellationToken);
+                    await WritePacketAsync(channel, new RoomPacket { Type = "system", Text = "你当前已被房主禁言。" }, cancellationToken);
                     continue;
                 }
                 packet.Room = _roomName;
@@ -633,7 +700,8 @@ public partial class ChatRoomWindow : Window
                 // 旧版本对端可能没有带消息 ID，由房主补上，保证所有成员都能互相跳转引用。
                 // 消息 ID 一律由房主生成，避免成员伪造或复用别人的 ID 干扰引用跳转。
                 packet.MessageId = NextMessageId();
-                await BroadcastAsync(packet, cancellationToken);
+                // 附件分块不回传给上传者本人：他发完自己就能显示，省掉一整份重复流量。
+                await BroadcastAsync(packet, cancellationToken, exclude: packet.Type == "attachment-chunk" ? peer : null);
                 if (packet.Type == "attachment-chunk")
                 {
                     var complete = AcceptAttachmentChunk(packet);
@@ -642,7 +710,7 @@ public partial class ChatRoomWindow : Window
                         Dispatcher.Invoke(() => AddPacket(complete.Value.Packet, complete.Value.Path));
                         AppLog.Write($"收到成员附件：{peer.Name} ({peer.Ip})，{complete.Value.Packet.FileName}，{new FileInfo(complete.Value.Path).Length:N0} 字节。");
                         await peer.WriteLock.WaitAsync(cancellationToken);
-                        try { await WritePacketAsync(peer.Stream, new RoomPacket { Type = "attachment-ack", TransferId = packet.TransferId }, cancellationToken); }
+                        try { await WritePacketAsync(peer.Channel, new RoomPacket { Type = "attachment-ack", TransferId = packet.TransferId }, cancellationToken); }
                         finally { peer.WriteLock.Release(); }
                     }
                 }
@@ -701,48 +769,40 @@ public partial class ChatRoomWindow : Window
                 try { Dispatcher.Invoke(() => AddMessage("系统", $"{peer.Name} 离开了聊天室。", null, null)); } catch (InvalidOperationException) { }
             }
             client.Dispose();
+            try { channel?.Dispose(); } catch (ObjectDisposedException) { }
             if (peer is not null) AppLog.Write($"成员断开：{peer.Name} ({peer.Ip})。");
         }
     }
 
-    private async Task BroadcastAsync(RoomPacket packet, CancellationToken cancellationToken)
+    private async Task BroadcastAsync(RoomPacket packet, CancellationToken cancellationToken, Peer? exclude = null)
     {
         string json;
-        try { json = JsonSerializer.Serialize(packet) + "\n"; }
+        try { json = JsonSerializer.Serialize(packet); }
         catch (ArgumentException ex)
         {
             AppLog.Write($"房间数据序列化失败，已跳过该数据包：{ex.Message}");
             await Dispatcher.InvokeAsync(() => AddMessage("系统", "数据包过大，未能发送。请缩小消息或附件后重试。", null, null));
             return;
         }
-        byte[] bytes = Encoding.UTF8.GetBytes(json);
         Peer[] peers;
-        lock (_peerLock) peers = _peers.ToArray();
+        lock (_peerLock) peers = _peers.Where(p => !ReferenceEquals(p, exclude)).ToArray();
         foreach (var peer in peers)
         {
             try
             {
+                // 每个成员使用各自的会话密钥加密，不能复用同一份密文。
                 await peer.WriteLock.WaitAsync(cancellationToken);
-                try { await peer.Stream.WriteAsync(bytes, cancellationToken); await peer.Stream.FlushAsync(cancellationToken); }
+                try { await peer.Channel.WriteLineAsync(json, cancellationToken); }
                 finally { peer.WriteLock.Release(); }
             }
             catch (IOException) { }
             catch (ObjectDisposedException) { }
+            catch (System.Security.Cryptography.CryptographicException) { }
         }
     }
 
-    private static async Task WritePacketAsync(NetworkStream stream, RoomPacket packet, CancellationToken cancellationToken)
-    {
-        var bytes = SerializePacket(packet);
-        await WritePacketBytesAsync(stream, bytes, cancellationToken);
-    }
-
-    private static byte[] SerializePacket(RoomPacket packet) => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(packet) + "\n");
-
-    private static async Task WritePacketBytesAsync(NetworkStream stream, byte[] bytes, CancellationToken cancellationToken)
-    {
-        await stream.WriteAsync(bytes, cancellationToken);
-    }
+    private static Task WritePacketAsync(SecureChannel channel, RoomPacket packet, CancellationToken cancellationToken) =>
+        channel.WriteLineAsync(JsonSerializer.Serialize(packet), cancellationToken);
 
     private async void Send_Click(object sender, RoutedEventArgs e)
     {
@@ -932,7 +992,7 @@ public partial class ChatRoomWindow : Window
                     await peer.WriteLock.WaitAsync(_shutdown.Token);
                     try
                     {
-                        await WritePacketAsync(peer.Stream, new RoomPacket
+                        await WritePacketAsync(peer.Channel, new RoomPacket
                         {
                             Type = "mute-state", Text = muted ? "muted" : "unmuted",
                             Sender = fromAdmin ? requesterName : _userName,
@@ -950,12 +1010,13 @@ public partial class ChatRoomWindow : Window
             try
             {
                 await peer.WriteLock.WaitAsync(_shutdown.Token);
-                try { await WritePacketAsync(peer.Stream, new RoomPacket { Type = "removed", Text = removalNotice }, _shutdown.Token); }
+                try { await WritePacketAsync(peer.Channel, new RoomPacket { Type = "removed", Text = removalNotice }, _shutdown.Token); }
                 finally { peer.WriteLock.Release(); }
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
             { AppLog.Write($"无法向 {peer.Name} 发送移出通知：{ex.Message}"); }
             try { peer.Client.Dispose(); } catch (ObjectDisposedException) { }
+            try { peer.Channel.Dispose(); } catch (ObjectDisposedException) { }
         }
 
         var report = command switch
@@ -2035,13 +2096,13 @@ public partial class ChatRoomWindow : Window
 
     private static async Task SendPeerPacketAsync(Peer peer, RoomPacket packet, CancellationToken cancellationToken)
     {
-        byte[] bytes;
-        try { bytes = SerializePacket(packet); }
+        string json;
+        try { json = JsonSerializer.Serialize(packet); }
         catch (ArgumentException) { return; }
         try
         {
             await peer.WriteLock.WaitAsync(cancellationToken);
-            try { await WritePacketBytesAsync(peer.Stream, bytes, cancellationToken); }
+            try { await peer.Channel.WriteLineAsync(json, cancellationToken); }
             finally { peer.WriteLock.Release(); }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or SocketException or InvalidOperationException)
@@ -2189,8 +2250,14 @@ public partial class ChatRoomWindow : Window
                 SetUploadProgress($"正在等待接收确认：{info.Name}", totalBytes * 0.99, Math.Max(1, totalBytes));
                 await uploadAck.Task.WaitAsync(_shutdown.Token);
             }
-            if (_upstreamStream is null)
-                AddPacket(new RoomPacket { Type = isImage ? "image" : "file", Sender = _userName, SenderRole = "创建者", SenderIp = GetLocalPrivateIpv4(), FileName = info.Name, MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream" }, filePath);
+            // 发送方本机直接引用原始文件展示，房主不再把分块回传给自己。
+            var role = _listener is null ? _myRole : "创建者";
+            AddPacket(new RoomPacket
+            {
+                Type = isImage ? "image" : "file", Sender = _userName, SenderRole = role,
+                SenderIp = GetLocalPrivateIpv4(), FileName = info.Name,
+                MimeType = isImage ? GetImageMime(info.Extension) : "application/octet-stream"
+            }, filePath);
             AppLog.Write($"附件发送成功：{info.Name}，{totalBytes:N0} 字节，房间“{_roomName}”。");
             uploadSucceeded = true;
             SetUploadProgress($"上传成功：{info.Name}", Math.Max(1, totalBytes), Math.Max(1, totalBytes));
@@ -2248,11 +2315,11 @@ public partial class ChatRoomWindow : Window
     /// </summary>
     private async Task<bool> WriteUpstreamPacketAsync(RoomPacket packet, CancellationToken cancellationToken)
     {
-        var stream = _upstreamStream;
-        if (stream is null) return false;
+        var channel = _upstreamChannel;
+        if (channel is null) return false;
         if (_upstreamClosed) return false;
-        byte[] bytes;
-        try { bytes = SerializePacket(packet); }
+        string json;
+        try { json = JsonSerializer.Serialize(packet); }
         catch (ArgumentException ex)
         {
             AppLog.Write($"房间数据序列化失败，已跳过该数据包：{ex.Message}");
@@ -2264,7 +2331,7 @@ public partial class ChatRoomWindow : Window
             try
             {
                 if (_upstreamClosed) return false;
-                await WritePacketBytesAsync(stream, bytes, cancellationToken);
+                await channel.WriteLineAsync(json, cancellationToken);
                 return true;
             }
             finally { _upstreamWriteLock.Release(); }
@@ -2910,6 +2977,7 @@ public partial class ChatRoomWindow : Window
                 _shutdown.Cancel();
                 _listener?.Stop();
                 _discovery?.Dispose();
+                _upstreamChannel?.Dispose();
                 _upstream?.Dispose();
                 lock (_peerLock)
                 {
@@ -2938,7 +3006,7 @@ public partial class ChatRoomWindow : Window
         }
     }
 
-    private sealed record Peer(TcpClient Client, NetworkStream Stream, string Name, string Ip)
+    private sealed record Peer(TcpClient Client, SecureChannel Channel, string Name, string Ip)
     {
         public SemaphoreSlim WriteLock { get; } = new(1, 1);
         public long LastHeartbeatTicks = DateTime.UtcNow.Ticks;

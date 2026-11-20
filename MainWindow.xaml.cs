@@ -18,6 +18,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // 左下角显示当前版本号（三段式，随程序集版本自动更新）
+        VersionText.Text = $"v{UpdateChecker.Format(UpdateChecker.CurrentVersion)}";
         Closed += (_, _) => _loggerWindow?.Close();
         // 启动时静默检查一次：失败或已是最新都不打扰用户。
         Loaded += (_, _) => _ = CheckForUpdatesAsync(silent: true);
@@ -50,7 +52,7 @@ public partial class MainWindow : Window
         {
             AppLog.Write(silent ? "开始静默检查更新。" : "用户点击检查更新。");
             var result = await UpdateChecker.CheckAsync().ConfigureAwait(false);
-            var current = UpdateChecker.CurrentVersion;
+            var current = UpdateChecker.Format(UpdateChecker.CurrentVersion);
 
             if (!result.Succeeded)
             {
@@ -62,17 +64,17 @@ public partial class MainWindow : Window
 
             if (!result.HasUpdate)
             {
-                AppLog.Write($"已是最新版本：当前 v{current}，GitHub 最新 v{result.LatestVersion}。");
+                AppLog.Write($"已是最新版本：当前 v{current}，GitHub 最新 v{UpdateChecker.Format(result.LatestVersion)}。");
                 if (!silent)
-                    Ui(() => MessageBox.Show(this, $"您已是最新版本。\n\n当前版本：v{current}\nGitHub 最新：v{result.LatestVersion}",
+                    Ui(() => MessageBox.Show(this, $"您已是最新版本。\n\n当前版本：v{current}\nGitHub 最新：v{UpdateChecker.Format(result.LatestVersion)}",
                         "检查更新", MessageBoxButton.OK, MessageBoxImage.Information));
                 return;
             }
 
-            AppLog.Write($"发现新版本：当前 v{current}，GitHub v{result.LatestVersion}（{result.Tag}）。");
+            AppLog.Write($"发现新版本：当前 v{current}，GitHub v{UpdateChecker.Format(result.LatestVersion)}（{result.Tag}）。");
             var open = false;
             Ui(() => open = MessageBox.Show(this,
-                $"发现新版本 v{result.LatestVersion}（当前 v{current}）。\n\n是否前往下载最新版？\n将在默认浏览器中打开下载页面。",
+                $"发现新版本 v{UpdateChecker.Format(result.LatestVersion)}（当前 v{current}）。\n\n是否前往下载最新版？\n将在默认浏览器中打开下载页面。",
                 "发现新版本", MessageBoxButton.YesNo, MessageBoxImage.Information, MessageBoxResult.Yes) == MessageBoxResult.Yes);
             if (!open)
             {
@@ -205,12 +207,7 @@ public partial class MainWindow : Window
     private async Task VerifyRoomCredentialsAsync(JoinRoomWindow dialog)
     {
         AppLog.Write($"开始验证房间：{dialog.RoomName} @ {dialog.Host}:{dialog.Port}。");
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        using var client = new TcpClient();
-        await client.ConnectAsync(dialog.Host, dialog.Port, timeout.Token);
-        var stream = client.GetStream();
-        using var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
-        using var reader = new StreamReader(stream, new UTF8Encoding(false), false, 4096, true);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         var request = JsonSerializer.Serialize(new
         {
             Type = "validate",
@@ -218,8 +215,15 @@ public partial class MainWindow : Window
             Password = dialog.Password,
             Sender = _currentUsername
         });
-        await writer.WriteLineAsync(request.AsMemory(), timeout.Token);
-        var responseLine = await reader.ReadLineAsync(timeout.Token);
+
+        var responseLine = await ValidateOnceAsync(dialog.Host, dialog.Port, request, encrypted: true, timeout.Token);
+        // 旧版主机不识别加密握手：改用明文重试一次，保证仍能加入。
+        if (responseLine is null || responseLine.Contains("房间名错误"))
+        {
+            AppLog.Write("主机未启用加密握手，改用明文验证。");
+            responseLine = await ValidateOnceAsync(dialog.Host, dialog.Port, request, encrypted: false, timeout.Token);
+        }
+
         if (string.IsNullOrWhiteSpace(responseLine))
             throw new InvalidDataException("房间未返回加入确认，请检查房间名和网络连接。");
         using var response = JsonDocument.Parse(responseLine);
@@ -232,6 +236,21 @@ public partial class MainWindow : Window
         if (type != "joined") throw new InvalidDataException("未能确认加入聊天室，请检查房间信息。");
     }
 
+    /// <summary>用一条临时连接完成房间预验证；encrypted=false 时直接明文发送。</summary>
+    private static async Task<string?> ValidateOnceAsync(string host, int port, string request, bool encrypted, CancellationToken cancellationToken)
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(host, port, cancellationToken);
+        var channel = new SecureChannel(client.GetStream());
+        try
+        {
+            if (encrypted && !await channel.NegotiateAsClientAsync(TimeSpan.FromSeconds(2.5), cancellationToken)) return null;
+            await channel.WriteLineAsync(request, cancellationToken);
+            return await channel.ReadLineAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException) { return null; }
+        finally { channel.Dispose(); }
+    }
     private static bool IsRoomAccessNotice(string message) =>
         message is "您已被踢出聊天室" or "您已被封禁" or "您的 IP 已被封禁";
 

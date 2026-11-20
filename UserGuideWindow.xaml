@@ -64,6 +64,9 @@
                     <TextBlock Text="13. 检查更新" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="主页右上角的“检查更新”会读取 GitHub 上的已构建版本并与当前版本比较：已是最新会提示版本号；发现新版本时会询问是否下载，选“是”会用默认浏览器打开下载页面，选“否”可继续使用。程序启动时也会静默检查一次，失败或已是最新都不会打扰你。" TextWrapping="Wrap" Margin="0,7,0,0" />
 
+                    <TextBlock Text="14. 传输加密" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
+                    <TextBlock Text="客户端与房主建立连接时会先用 ECDH（P-256）协商出会话密钥，之后的聊天消息、附件、管理指令全部使用 AES-256-GCM 加密传输（每帧带认证标签，被篡改会立即断开）。密钥每次连接都重新生成，退出即失效。若房主仍在使用旧版本客户端，程序会自动回退为明文并在聊天区提示；建议同一局域网内都升级到最新版本。" TextWrapping="Wrap" Margin="0,7,0,0" />
+
                     <TextBlock Text="6. 窗口置顶" FontSize="17" FontWeight="SemiBold" Foreground="#C2D2F5" Margin="0,20,0,0" />
                     <TextBlock Text="每个页面都可单独点击“📌 置顶”，让当前窗口保持在其他窗口上方；取消勾选即可恢复普通层级。" TextWrapping="Wrap" Margin="0,7,0,0" />
 

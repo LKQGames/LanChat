@@ -76,8 +76,7 @@
         </Grid>
 
         <DockPanel Grid.Row="2" Margin="4,18,4,0">
-            <TextBlock Text="局域聊天室" FontSize="11" Foreground="{StaticResource MutedBrush}" DockPanel.Dock="Left" />
-            <TextBlock Text="主页面原型" FontSize="11" Foreground="{StaticResource MutedBrush}" DockPanel.Dock="Right" />
+            <TextBlock x:Name="VersionText" Text="v1.0.0" FontSize="11" Foreground="{StaticResource MutedBrush}" DockPanel.Dock="Left" />
         </DockPanel>
     </Grid>
 </Window>

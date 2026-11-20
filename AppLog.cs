@@ -67,12 +67,19 @@ internal static class AppLog
         }
     }
 
+    /// <summary>三段式版本号（1.1.10），与界面显示保持一致。</summary>
+    private static string FormatAssemblyVersion()
+    {
+        var version = typeof(AppLog).Assembly.GetName().Version;
+        return version is null ? "未知" : $"{version.Major}.{Math.Max(0, version.Minor)}.{Math.Max(0, version.Build)}";
+    }
+
     private static string BuildCrashText(Exception? exception, string source, bool fatal)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"===== {(fatal ? "崩溃记录" : "异常记录")} {DateTime.Now:yyyy-MM-dd HH:mm:ss} =====");
         builder.AppendLine($"来源：{source}");
-        builder.AppendLine($"程序版本：{typeof(AppLog).Assembly.GetName().Version}");
+        builder.AppendLine($"程序版本：{FormatAssemblyVersion()}");
         builder.AppendLine($"进程：{Environment.ProcessPath}");
         builder.AppendLine($"运行时长：{DateTime.Now - StartedAt:hh\\:mm\\:ss}");
         if (exception is null)

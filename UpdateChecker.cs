@@ -37,6 +37,10 @@ internal static class UpdateChecker
     public static Version CurrentVersion =>
         Normalize(Assembly.GetExecutingAssembly().GetName().Version) ?? new Version(1, 0, 0);
 
+    /// <summary>统一显示成三段式版本号（1.1.10），不显示第四段修订号。</summary>
+    public static string Format(Version? version) =>
+        version is null ? "未知" : $"{version.Major}.{Math.Max(0, version.Minor)}.{Math.Max(0, version.Build)}";
+
     /// <summary>查询结果：失败时 Error 非空；成功时 LatestVersion/DownloadUrl 有效。</summary>
     internal sealed record Result(Version? LatestVersion, string? Tag, string? DownloadUrl, string? Error)
     {
@@ -57,7 +61,7 @@ internal static class UpdateChecker
                 AppLog.Write($"发布列表 API 返回 HTTP {(int)response.StatusCode}，尝试发布页兜底。");
                 var fallbackVersion = await TryGetLatestTagFromReleasesPageAsync(cancellationToken).ConfigureAwait(false);
                 if (fallbackVersion is not null)
-                    return new Result(fallbackVersion, $"v{fallbackVersion}", ReleasesPage, null);
+                    return new Result(fallbackVersion, $"v{Format(fallbackVersion)}", ReleasesPage, null);
                 return new Result(null, null, null, response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Forbidden
                     ? $"无法读取发布列表（HTTP {(int)response.StatusCode}），仓库可能未公开或已改名。"
                     : $"GitHub 返回 HTTP {(int)response.StatusCode}。");
@@ -96,7 +100,7 @@ internal static class UpdateChecker
             {
                 var fallbackVersion = await TryGetLatestTagFromReleasesPageAsync(cancellationToken).ConfigureAwait(false);
                 if (fallbackVersion is not null)
-                    return new Result(fallbackVersion, $"v{fallbackVersion}", ReleasesPage, null);
+                    return new Result(fallbackVersion, $"v{Format(fallbackVersion)}", ReleasesPage, null);
             }
             catch (Exception fallbackError) when (fallbackError is HttpRequestException or TaskCanceledException)
             {
