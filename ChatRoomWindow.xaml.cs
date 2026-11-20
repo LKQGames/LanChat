@@ -594,7 +594,7 @@ public partial class ChatRoomWindow : Window
             {
                 AppLog.Write($"{client.Client.RemoteEndPoint} 使用旧版明文协议连接（未加密）。");
                 // 用 BeginInvoke 异步提示：不能在这里 await UI 线程，否则界面弹窗时会把接入流程卡住。
-                Dispatcher.BeginInvoke(new Action(() => AddMessage("系统",
+                _ = Dispatcher.BeginInvoke(new Action(() => AddMessage("系统",
                     $"{client.Client.RemoteEndPoint} 使用旧版客户端连接，该连接未加密；建议对方升级到最新版本。", null, null)));
             }
             var hello = JsonSerializer.Deserialize<RoomPacket>(firstLine);
