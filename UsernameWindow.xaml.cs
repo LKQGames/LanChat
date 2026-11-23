@@ -4,6 +4,12 @@ namespace LanChat;
 
 public partial class UsernameWindow : Window
 {
+    private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+        try { DragMove(); } catch (System.InvalidOperationException) { }
+    }
+
     public string Username => UsernameInput.Text.Trim();
     public string CurrentUsername { get; set; } = string.Empty;
 

@@ -11,6 +11,12 @@ public enum RustDeskConnectMode
 
 public partial class RustDeskConnectModeWindow : Window
 {
+    private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+        try { DragMove(); } catch (System.InvalidOperationException) { }
+    }
+
     public RustDeskConnectModeWindow(string targetName, string targetIp, string? rustDeskId)
     {
         InitializeComponent();

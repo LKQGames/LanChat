@@ -10,6 +10,12 @@ namespace LanChat;
 
 public partial class JoinRoomWindow : Window
 {
+    private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+        try { DragMove(); } catch (System.InvalidOperationException) { }
+    }
+
     private const int DiscoveryPort = 47820;
     private readonly ObservableCollection<DiscoveredRoom> _rooms = new();
     private readonly bool _searchOnOpen;

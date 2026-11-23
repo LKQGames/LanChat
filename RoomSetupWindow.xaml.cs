@@ -6,6 +6,12 @@ namespace LanChat;
 
 public partial class RoomSetupWindow : Window
 {
+    private void Header_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+        try { DragMove(); } catch (System.InvalidOperationException) { }
+    }
+
     public string RoomName => RoomNameInput.Text.Trim();
     public int Port { get; private set; }
     public string Password => PasswordInput.Password;

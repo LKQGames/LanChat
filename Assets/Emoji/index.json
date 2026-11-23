@@ -1,0 +1,1846 @@
+{
+ "tile": 26,
+ "columns": 24,
+ "items": [
+  {
+   "category": "表情",
+   "emoji": "😀",
+   "name": "grinning"
+  },
+  {
+   "category": "表情",
+   "emoji": "😃",
+   "name": "smiley"
+  },
+  {
+   "category": "表情",
+   "emoji": "😄",
+   "name": "smile"
+  },
+  {
+   "category": "表情",
+   "emoji": "😁",
+   "name": "grin"
+  },
+  {
+   "category": "表情",
+   "emoji": "😆",
+   "name": "laughing"
+  },
+  {
+   "category": "表情",
+   "emoji": "😅",
+   "name": "sweat_smile"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤣",
+   "name": "rolling_on_the_floor_laughing"
+  },
+  {
+   "category": "表情",
+   "emoji": "😂",
+   "name": "joy"
+  },
+  {
+   "category": "表情",
+   "emoji": "🙂",
+   "name": "slightly_smiling_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🙃",
+   "name": "upside_down_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🫠",
+   "name": "melting_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "😉",
+   "name": "wink"
+  },
+  {
+   "category": "表情",
+   "emoji": "😊",
+   "name": "blush"
+  },
+  {
+   "category": "表情",
+   "emoji": "😇",
+   "name": "innocent"
+  },
+  {
+   "category": "表情",
+   "emoji": "🥰",
+   "name": "smiling_face_with_3_hearts"
+  },
+  {
+   "category": "表情",
+   "emoji": "😍",
+   "name": "heart_eyes"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤩",
+   "name": "star-struck"
+  },
+  {
+   "category": "表情",
+   "emoji": "😘",
+   "name": "kissing_heart"
+  },
+  {
+   "category": "表情",
+   "emoji": "😗",
+   "name": "kissing"
+  },
+  {
+   "category": "表情",
+   "emoji": "☺️",
+   "name": "relaxed"
+  },
+  {
+   "category": "表情",
+   "emoji": "😚",
+   "name": "kissing_closed_eyes"
+  },
+  {
+   "category": "表情",
+   "emoji": "😙",
+   "name": "kissing_smiling_eyes"
+  },
+  {
+   "category": "表情",
+   "emoji": "🥲",
+   "name": "smiling_face_with_tear"
+  },
+  {
+   "category": "表情",
+   "emoji": "😋",
+   "name": "yum"
+  },
+  {
+   "category": "表情",
+   "emoji": "😛",
+   "name": "stuck_out_tongue"
+  },
+  {
+   "category": "表情",
+   "emoji": "😜",
+   "name": "stuck_out_tongue_winking_eye"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤪",
+   "name": "zany_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "😝",
+   "name": "stuck_out_tongue_closed_eyes"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤑",
+   "name": "money_mouth_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤗",
+   "name": "hugging_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤭",
+   "name": "face_with_hand_over_mouth"
+  },
+  {
+   "category": "表情",
+   "emoji": "🫢",
+   "name": "face_with_open_eyes_and_hand_over_mouth"
+  },
+  {
+   "category": "表情",
+   "emoji": "🫣",
+   "name": "face_with_peeking_eye"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤫",
+   "name": "shushing_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤔",
+   "name": "thinking_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🫡",
+   "name": "saluting_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤐",
+   "name": "zipper_mouth_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "🤨",
+   "name": "face_with_raised_eyebrow"
+  },
+  {
+   "category": "表情",
+   "emoji": "😐",
+   "name": "neutral_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "😑",
+   "name": "expressionless"
+  },
+  {
+   "category": "表情",
+   "emoji": "😶",
+   "name": "no_mouth"
+  },
+  {
+   "category": "表情",
+   "emoji": "🫥",
+   "name": "dotted_line_face"
+  },
+  {
+   "category": "表情",
+   "emoji": "😶‍🌫️",
+   "name": "face_in_clouds"
+  },
+  {
+   "category": "表情",
+   "emoji": "😏",
+   "name": "smirk"
+  },
+  {
+   "category": "表情",
+   "emoji": "😒",
+   "name": "unamused"
+  },
+  {
+   "category": "表情",
+   "emoji": "🙄",
+   "name": "face_with_rolling_eyes"
+  },
+  {
+   "category": "人物",
+   "emoji": "👋",
+   "name": "wave"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤚",
+   "name": "raised_back_of_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🖐️",
+   "name": "raised_hand_with_fingers_splayed"
+  },
+  {
+   "category": "人物",
+   "emoji": "✋",
+   "name": "hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🖖",
+   "name": "spock-hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫱",
+   "name": "rightwards_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫲",
+   "name": "leftwards_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫳",
+   "name": "palm_down_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫴",
+   "name": "palm_up_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫷",
+   "name": "leftwards_pushing_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫸",
+   "name": "rightwards_pushing_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "👌",
+   "name": "ok_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤌",
+   "name": "pinched_fingers"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤏",
+   "name": "pinching_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "✌️",
+   "name": "v"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤞",
+   "name": "crossed_fingers"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫰",
+   "name": "hand_with_index_finger_and_thumb_crossed"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤟",
+   "name": "i_love_you_hand_sign"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤘",
+   "name": "the_horns"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤙",
+   "name": "call_me_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "👈",
+   "name": "point_left"
+  },
+  {
+   "category": "人物",
+   "emoji": "👉",
+   "name": "point_right"
+  },
+  {
+   "category": "人物",
+   "emoji": "👆",
+   "name": "point_up_2"
+  },
+  {
+   "category": "人物",
+   "emoji": "🖕",
+   "name": "middle_finger"
+  },
+  {
+   "category": "人物",
+   "emoji": "👇",
+   "name": "point_down"
+  },
+  {
+   "category": "人物",
+   "emoji": "☝️",
+   "name": "point_up"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫵",
+   "name": "index_pointing_at_the_viewer"
+  },
+  {
+   "category": "人物",
+   "emoji": "👍",
+   "name": "+1"
+  },
+  {
+   "category": "人物",
+   "emoji": "👎",
+   "name": "-1"
+  },
+  {
+   "category": "人物",
+   "emoji": "✊",
+   "name": "fist"
+  },
+  {
+   "category": "人物",
+   "emoji": "👊",
+   "name": "facepunch"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤛",
+   "name": "left-facing_fist"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤜",
+   "name": "right-facing_fist"
+  },
+  {
+   "category": "人物",
+   "emoji": "👏",
+   "name": "clap"
+  },
+  {
+   "category": "人物",
+   "emoji": "🙌",
+   "name": "raised_hands"
+  },
+  {
+   "category": "人物",
+   "emoji": "🫶",
+   "name": "heart_hands"
+  },
+  {
+   "category": "人物",
+   "emoji": "👐",
+   "name": "open_hands"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤲",
+   "name": "palms_up_together"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤝",
+   "name": "handshake"
+  },
+  {
+   "category": "人物",
+   "emoji": "🙏",
+   "name": "pray"
+  },
+  {
+   "category": "人物",
+   "emoji": "✍️",
+   "name": "writing_hand"
+  },
+  {
+   "category": "人物",
+   "emoji": "💅",
+   "name": "nail_care"
+  },
+  {
+   "category": "人物",
+   "emoji": "🤳",
+   "name": "selfie"
+  },
+  {
+   "category": "人物",
+   "emoji": "💪",
+   "name": "muscle"
+  },
+  {
+   "category": "人物",
+   "emoji": "🦾",
+   "name": "mechanical_arm"
+  },
+  {
+   "category": "人物",
+   "emoji": "🦿",
+   "name": "mechanical_leg"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐵",
+   "name": "monkey_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐒",
+   "name": "monkey"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦍",
+   "name": "gorilla"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦧",
+   "name": "orangutan"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐶",
+   "name": "dog"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐕",
+   "name": "dog2"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦮",
+   "name": "guide_dog"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐕‍🦺",
+   "name": "service_dog"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐩",
+   "name": "poodle"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐺",
+   "name": "wolf"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦊",
+   "name": "fox_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦝",
+   "name": "raccoon"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐱",
+   "name": "cat"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐈",
+   "name": "cat2"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐈‍⬛",
+   "name": "black_cat"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦁",
+   "name": "lion_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐯",
+   "name": "tiger"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐅",
+   "name": "tiger2"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐆",
+   "name": "leopard"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐴",
+   "name": "horse"
+  },
+  {
+   "category": "动物",
+   "emoji": "🫎",
+   "name": "moose"
+  },
+  {
+   "category": "动物",
+   "emoji": "🫏",
+   "name": "donkey"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐎",
+   "name": "racehorse"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦄",
+   "name": "unicorn_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦓",
+   "name": "zebra_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦌",
+   "name": "deer"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦬",
+   "name": "bison"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐮",
+   "name": "cow"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐂",
+   "name": "ox"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐃",
+   "name": "water_buffalo"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐄",
+   "name": "cow2"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐷",
+   "name": "pig"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐖",
+   "name": "pig2"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐗",
+   "name": "boar"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐽",
+   "name": "pig_nose"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐏",
+   "name": "ram"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐑",
+   "name": "sheep"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐐",
+   "name": "goat"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐪",
+   "name": "dromedary_camel"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐫",
+   "name": "camel"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦙",
+   "name": "llama"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦒",
+   "name": "giraffe_face"
+  },
+  {
+   "category": "动物",
+   "emoji": "🐘",
+   "name": "elephant"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦣",
+   "name": "mammoth"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦏",
+   "name": "rhinoceros"
+  },
+  {
+   "category": "动物",
+   "emoji": "🦛",
+   "name": "hippopotamus"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍇",
+   "name": "grapes"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍈",
+   "name": "melon"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍉",
+   "name": "watermelon"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍊",
+   "name": "tangerine"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍋",
+   "name": "lemon"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍋‍🟩",
+   "name": "lime"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍌",
+   "name": "banana"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍍",
+   "name": "pineapple"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥭",
+   "name": "mango"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍎",
+   "name": "apple"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍏",
+   "name": "green_apple"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍐",
+   "name": "pear"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍑",
+   "name": "peach"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍒",
+   "name": "cherries"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍓",
+   "name": "strawberry"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫐",
+   "name": "blueberries"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥝",
+   "name": "kiwifruit"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍅",
+   "name": "tomato"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫒",
+   "name": "olive"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥥",
+   "name": "coconut"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥑",
+   "name": "avocado"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍆",
+   "name": "eggplant"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥔",
+   "name": "potato"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥕",
+   "name": "carrot"
+  },
+  {
+   "category": "食物",
+   "emoji": "🌽",
+   "name": "corn"
+  },
+  {
+   "category": "食物",
+   "emoji": "🌶️",
+   "name": "hot_pepper"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫑",
+   "name": "bell_pepper"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥒",
+   "name": "cucumber"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥬",
+   "name": "leafy_green"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥦",
+   "name": "broccoli"
+  },
+  {
+   "category": "食物",
+   "emoji": "🧄",
+   "name": "garlic"
+  },
+  {
+   "category": "食物",
+   "emoji": "🧅",
+   "name": "onion"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥜",
+   "name": "peanuts"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫘",
+   "name": "beans"
+  },
+  {
+   "category": "食物",
+   "emoji": "🌰",
+   "name": "chestnut"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫚",
+   "name": "ginger_root"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫛",
+   "name": "pea_pod"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍄‍🟫",
+   "name": "brown_mushroom"
+  },
+  {
+   "category": "食物",
+   "emoji": "🍞",
+   "name": "bread"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥐",
+   "name": "croissant"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥖",
+   "name": "baguette_bread"
+  },
+  {
+   "category": "食物",
+   "emoji": "🫓",
+   "name": "flatbread"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥨",
+   "name": "pretzel"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥯",
+   "name": "bagel"
+  },
+  {
+   "category": "食物",
+   "emoji": "🥞",
+   "name": "pancakes"
+  },
+  {
+   "category": "食物",
+   "emoji": "🧇",
+   "name": "waffle"
+  },
+  {
+   "category": "出行",
+   "emoji": "🌍",
+   "name": "earth_africa"
+  },
+  {
+   "category": "出行",
+   "emoji": "🌎",
+   "name": "earth_americas"
+  },
+  {
+   "category": "出行",
+   "emoji": "🌏",
+   "name": "earth_asia"
+  },
+  {
+   "category": "出行",
+   "emoji": "🌐",
+   "name": "globe_with_meridians"
+  },
+  {
+   "category": "出行",
+   "emoji": "🗺️",
+   "name": "world_map"
+  },
+  {
+   "category": "出行",
+   "emoji": "🗾",
+   "name": "japan"
+  },
+  {
+   "category": "出行",
+   "emoji": "🧭",
+   "name": "compass"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏔️",
+   "name": "snow_capped_mountain"
+  },
+  {
+   "category": "出行",
+   "emoji": "⛰️",
+   "name": "mountain"
+  },
+  {
+   "category": "出行",
+   "emoji": "🌋",
+   "name": "volcano"
+  },
+  {
+   "category": "出行",
+   "emoji": "🗻",
+   "name": "mount_fuji"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏕️",
+   "name": "camping"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏖️",
+   "name": "beach_with_umbrella"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏜️",
+   "name": "desert"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏝️",
+   "name": "desert_island"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏞️",
+   "name": "national_park"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏟️",
+   "name": "stadium"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏛️",
+   "name": "classical_building"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏗️",
+   "name": "building_construction"
+  },
+  {
+   "category": "出行",
+   "emoji": "🧱",
+   "name": "bricks"
+  },
+  {
+   "category": "出行",
+   "emoji": "🪨",
+   "name": "rock"
+  },
+  {
+   "category": "出行",
+   "emoji": "🪵",
+   "name": "wood"
+  },
+  {
+   "category": "出行",
+   "emoji": "🛖",
+   "name": "hut"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏘️",
+   "name": "house_buildings"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏚️",
+   "name": "derelict_house_building"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏠",
+   "name": "house"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏡",
+   "name": "house_with_garden"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏢",
+   "name": "office"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏣",
+   "name": "post_office"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏤",
+   "name": "european_post_office"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏥",
+   "name": "hospital"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏦",
+   "name": "bank"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏨",
+   "name": "hotel"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏩",
+   "name": "love_hotel"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏪",
+   "name": "convenience_store"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏫",
+   "name": "school"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏬",
+   "name": "department_store"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏭",
+   "name": "factory"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏯",
+   "name": "japanese_castle"
+  },
+  {
+   "category": "出行",
+   "emoji": "🏰",
+   "name": "european_castle"
+  },
+  {
+   "category": "出行",
+   "emoji": "💒",
+   "name": "wedding"
+  },
+  {
+   "category": "出行",
+   "emoji": "🗼",
+   "name": "tokyo_tower"
+  },
+  {
+   "category": "出行",
+   "emoji": "🗽",
+   "name": "statue_of_liberty"
+  },
+  {
+   "category": "出行",
+   "emoji": "⛪",
+   "name": "church"
+  },
+  {
+   "category": "出行",
+   "emoji": "🕌",
+   "name": "mosque"
+  },
+  {
+   "category": "出行",
+   "emoji": "🛕",
+   "name": "hindu_temple"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎃",
+   "name": "jack_o_lantern"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎄",
+   "name": "christmas_tree"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎆",
+   "name": "fireworks"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎇",
+   "name": "sparkler"
+  },
+  {
+   "category": "活动",
+   "emoji": "🧨",
+   "name": "firecracker"
+  },
+  {
+   "category": "活动",
+   "emoji": "✨",
+   "name": "sparkles"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎈",
+   "name": "balloon"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎉",
+   "name": "tada"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎊",
+   "name": "confetti_ball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎋",
+   "name": "tanabata_tree"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎍",
+   "name": "bamboo"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎎",
+   "name": "dolls"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎏",
+   "name": "flags"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎐",
+   "name": "wind_chime"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎑",
+   "name": "rice_scene"
+  },
+  {
+   "category": "活动",
+   "emoji": "🧧",
+   "name": "red_envelope"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎀",
+   "name": "ribbon"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎁",
+   "name": "gift"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎗️",
+   "name": "reminder_ribbon"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎟️",
+   "name": "admission_tickets"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎫",
+   "name": "ticket"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎖️",
+   "name": "medal"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏆",
+   "name": "trophy"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏅",
+   "name": "sports_medal"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥇",
+   "name": "first_place_medal"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥈",
+   "name": "second_place_medal"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥉",
+   "name": "third_place_medal"
+  },
+  {
+   "category": "活动",
+   "emoji": "⚽",
+   "name": "soccer"
+  },
+  {
+   "category": "活动",
+   "emoji": "⚾",
+   "name": "baseball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥎",
+   "name": "softball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏀",
+   "name": "basketball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏐",
+   "name": "volleyball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏈",
+   "name": "football"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏉",
+   "name": "rugby_football"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎾",
+   "name": "tennis"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥏",
+   "name": "flying_disc"
+  },
+  {
+   "category": "活动",
+   "emoji": "🎳",
+   "name": "bowling"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏏",
+   "name": "cricket_bat_and_ball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏑",
+   "name": "field_hockey_stick_and_ball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏒",
+   "name": "ice_hockey_stick_and_puck"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥍",
+   "name": "lacrosse"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏓",
+   "name": "table_tennis_paddle_and_ball"
+  },
+  {
+   "category": "活动",
+   "emoji": "🏸",
+   "name": "badminton_racquet_and_shuttlecock"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥊",
+   "name": "boxing_glove"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥋",
+   "name": "martial_arts_uniform"
+  },
+  {
+   "category": "活动",
+   "emoji": "🥅",
+   "name": "goal_net"
+  },
+  {
+   "category": "物品",
+   "emoji": "👓",
+   "name": "eyeglasses"
+  },
+  {
+   "category": "物品",
+   "emoji": "🕶️",
+   "name": "dark_sunglasses"
+  },
+  {
+   "category": "物品",
+   "emoji": "🥽",
+   "name": "goggles"
+  },
+  {
+   "category": "物品",
+   "emoji": "🥼",
+   "name": "lab_coat"
+  },
+  {
+   "category": "物品",
+   "emoji": "🦺",
+   "name": "safety_vest"
+  },
+  {
+   "category": "物品",
+   "emoji": "👔",
+   "name": "necktie"
+  },
+  {
+   "category": "物品",
+   "emoji": "👕",
+   "name": "shirt"
+  },
+  {
+   "category": "物品",
+   "emoji": "👖",
+   "name": "jeans"
+  },
+  {
+   "category": "物品",
+   "emoji": "🧣",
+   "name": "scarf"
+  },
+  {
+   "category": "物品",
+   "emoji": "🧤",
+   "name": "gloves"
+  },
+  {
+   "category": "物品",
+   "emoji": "🧥",
+   "name": "coat"
+  },
+  {
+   "category": "物品",
+   "emoji": "🧦",
+   "name": "socks"
+  },
+  {
+   "category": "物品",
+   "emoji": "👗",
+   "name": "dress"
+  },
+  {
+   "category": "物品",
+   "emoji": "👘",
+   "name": "kimono"
+  },
+  {
+   "category": "物品",
+   "emoji": "🥻",
+   "name": "sari"
+  },
+  {
+   "category": "物品",
+   "emoji": "🩱",
+   "name": "one-piece_swimsuit"
+  },
+  {
+   "category": "物品",
+   "emoji": "🩲",
+   "name": "briefs"
+  },
+  {
+   "category": "物品",
+   "emoji": "🩳",
+   "name": "shorts"
+  },
+  {
+   "category": "物品",
+   "emoji": "👙",
+   "name": "bikini"
+  },
+  {
+   "category": "物品",
+   "emoji": "👚",
+   "name": "womans_clothes"
+  },
+  {
+   "category": "物品",
+   "emoji": "🪭",
+   "name": "folding_hand_fan"
+  },
+  {
+   "category": "物品",
+   "emoji": "👛",
+   "name": "purse"
+  },
+  {
+   "category": "物品",
+   "emoji": "👜",
+   "name": "handbag"
+  },
+  {
+   "category": "物品",
+   "emoji": "👝",
+   "name": "pouch"
+  },
+  {
+   "category": "物品",
+   "emoji": "🛍️",
+   "name": "shopping_bags"
+  },
+  {
+   "category": "物品",
+   "emoji": "🎒",
+   "name": "school_satchel"
+  },
+  {
+   "category": "物品",
+   "emoji": "🩴",
+   "name": "thong_sandal"
+  },
+  {
+   "category": "物品",
+   "emoji": "👞",
+   "name": "mans_shoe"
+  },
+  {
+   "category": "物品",
+   "emoji": "👟",
+   "name": "athletic_shoe"
+  },
+  {
+   "category": "物品",
+   "emoji": "🥾",
+   "name": "hiking_boot"
+  },
+  {
+   "category": "物品",
+   "emoji": "🥿",
+   "name": "womans_flat_shoe"
+  },
+  {
+   "category": "物品",
+   "emoji": "👠",
+   "name": "high_heel"
+  },
+  {
+   "category": "物品",
+   "emoji": "👡",
+   "name": "sandal"
+  },
+  {
+   "category": "物品",
+   "emoji": "🩰",
+   "name": "ballet_shoes"
+  },
+  {
+   "category": "物品",
+   "emoji": "👢",
+   "name": "boot"
+  },
+  {
+   "category": "物品",
+   "emoji": "🪮",
+   "name": "hair_pick"
+  },
+  {
+   "category": "物品",
+   "emoji": "👑",
+   "name": "crown"
+  },
+  {
+   "category": "物品",
+   "emoji": "👒",
+   "name": "womans_hat"
+  },
+  {
+   "category": "物品",
+   "emoji": "🎩",
+   "name": "tophat"
+  },
+  {
+   "category": "物品",
+   "emoji": "🎓",
+   "name": "mortar_board"
+  },
+  {
+   "category": "物品",
+   "emoji": "🧢",
+   "name": "billed_cap"
+  },
+  {
+   "category": "物品",
+   "emoji": "🪖",
+   "name": "military_helmet"
+  },
+  {
+   "category": "物品",
+   "emoji": "⛑️",
+   "name": "helmet_with_white_cross"
+  },
+  {
+   "category": "物品",
+   "emoji": "📿",
+   "name": "prayer_beads"
+  },
+  {
+   "category": "物品",
+   "emoji": "💄",
+   "name": "lipstick"
+  },
+  {
+   "category": "物品",
+   "emoji": "💍",
+   "name": "ring"
+  },
+  {
+   "category": "符号",
+   "emoji": "🏧",
+   "name": "atm"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚮",
+   "name": "put_litter_in_its_place"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚰",
+   "name": "potable_water"
+  },
+  {
+   "category": "符号",
+   "emoji": "♿",
+   "name": "wheelchair"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚹",
+   "name": "mens"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚺",
+   "name": "womens"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚻",
+   "name": "restroom"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚼",
+   "name": "baby_symbol"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚾",
+   "name": "wc"
+  },
+  {
+   "category": "符号",
+   "emoji": "🛂",
+   "name": "passport_control"
+  },
+  {
+   "category": "符号",
+   "emoji": "🛃",
+   "name": "customs"
+  },
+  {
+   "category": "符号",
+   "emoji": "🛄",
+   "name": "baggage_claim"
+  },
+  {
+   "category": "符号",
+   "emoji": "🛅",
+   "name": "left_luggage"
+  },
+  {
+   "category": "符号",
+   "emoji": "⚠️",
+   "name": "warning"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚸",
+   "name": "children_crossing"
+  },
+  {
+   "category": "符号",
+   "emoji": "⛔",
+   "name": "no_entry"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚫",
+   "name": "no_entry_sign"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚳",
+   "name": "no_bicycles"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚭",
+   "name": "no_smoking"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚯",
+   "name": "do_not_litter"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚱",
+   "name": "non-potable_water"
+  },
+  {
+   "category": "符号",
+   "emoji": "🚷",
+   "name": "no_pedestrians"
+  },
+  {
+   "category": "符号",
+   "emoji": "📵",
+   "name": "no_mobile_phones"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔞",
+   "name": "underage"
+  },
+  {
+   "category": "符号",
+   "emoji": "☢️",
+   "name": "radioactive_sign"
+  },
+  {
+   "category": "符号",
+   "emoji": "☣️",
+   "name": "biohazard_sign"
+  },
+  {
+   "category": "符号",
+   "emoji": "⬆️",
+   "name": "arrow_up"
+  },
+  {
+   "category": "符号",
+   "emoji": "↗️",
+   "name": "arrow_upper_right"
+  },
+  {
+   "category": "符号",
+   "emoji": "➡️",
+   "name": "arrow_right"
+  },
+  {
+   "category": "符号",
+   "emoji": "↘️",
+   "name": "arrow_lower_right"
+  },
+  {
+   "category": "符号",
+   "emoji": "⬇️",
+   "name": "arrow_down"
+  },
+  {
+   "category": "符号",
+   "emoji": "↙️",
+   "name": "arrow_lower_left"
+  },
+  {
+   "category": "符号",
+   "emoji": "⬅️",
+   "name": "arrow_left"
+  },
+  {
+   "category": "符号",
+   "emoji": "↖️",
+   "name": "arrow_upper_left"
+  },
+  {
+   "category": "符号",
+   "emoji": "↕️",
+   "name": "arrow_up_down"
+  },
+  {
+   "category": "符号",
+   "emoji": "↔️",
+   "name": "left_right_arrow"
+  },
+  {
+   "category": "符号",
+   "emoji": "↩️",
+   "name": "leftwards_arrow_with_hook"
+  },
+  {
+   "category": "符号",
+   "emoji": "↪️",
+   "name": "arrow_right_hook"
+  },
+  {
+   "category": "符号",
+   "emoji": "⤴️",
+   "name": "arrow_heading_up"
+  },
+  {
+   "category": "符号",
+   "emoji": "⤵️",
+   "name": "arrow_heading_down"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔃",
+   "name": "arrows_clockwise"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔄",
+   "name": "arrows_counterclockwise"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔙",
+   "name": "back"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔚",
+   "name": "end"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔛",
+   "name": "on"
+  },
+  {
+   "category": "符号",
+   "emoji": "🔜",
+   "name": "soon"
+  }
+ ]
+}

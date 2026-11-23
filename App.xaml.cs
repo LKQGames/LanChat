@@ -13,6 +13,7 @@ public partial class App : Application
     {
         AppLog.Write("程序启动。");
         AttachmentStore.PurgeStale();
+        WindowAnimations.Initialize();
 
         DispatcherUnhandledException += (_, e) =>
         {

@@ -12,6 +12,31 @@ public partial class MainWindow : Window
     private LoggerWindow? _loggerWindow;
     private int _updateCheckRunning;
 
+    /// <summary>记录打包字体是否解析成功，便于排查字体回退问题。</summary>
+    private void LogResolvedFont()
+    {
+        try
+        {
+            var typeface = new System.Windows.Media.Typeface(FontFamily, System.Windows.FontStyles.Normal, System.Windows.FontWeights.Normal, System.Windows.FontStretches.Normal);
+            if (typeface.TryGetGlyphTypeface(out var glyph) && glyph.FamilyNames.Count > 0)
+                AppLog.Write($"界面字体：{glyph.FamilyNames.Values.First()}");
+            else
+                AppLog.Write($"界面字体回退：{FontFamily.Source}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+        {
+            AppLog.Write($"界面字体解析失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>异步加载每日一言；失败时保留占位文案。</summary>
+    private async Task LoadDailyQuoteAsync()
+    {
+        var quote = await DailyQuote.FetchAsync();
+        if (string.IsNullOrWhiteSpace(quote)) return;
+        QuoteText.Text = quote;
+        AppLog.Write($"每日一言：{quote}");
+    }
     private void Pin_Checked(object sender, RoutedEventArgs e) => Topmost = true;
     private void Pin_Unchecked(object sender, RoutedEventArgs e) => Topmost = false;
 
@@ -20,6 +45,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         // 左下角显示当前版本号（三段式，随程序集版本自动更新）
         VersionText.Text = $"v{UpdateChecker.Format(UpdateChecker.CurrentVersion)}";
+        LogResolvedFont();
+        _ = LoadDailyQuoteAsync();
         Closed += (_, _) => _loggerWindow?.Close();
         // 启动时静默检查一次：失败或已是最新都不打扰用户。
         Loaded += (_, _) => _ = CheckForUpdatesAsync(silent: true);
@@ -148,7 +175,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Username)) return false;
         _currentUsername = dialog.Username;
         UsernameButton.Content = _currentUsername;
-        ActionHint.Text = $"当前用户名：{_currentUsername}";
+        AppLog.Write($"当前用户名：{_currentUsername}");
         AppLog.Write($"用户名已设置为“{_currentUsername}”。");
         return true;
     }
@@ -184,7 +211,7 @@ public partial class MainWindow : Window
             var room = new ChatRoomWindow(dialog.RoomName, dialog.Host, dialog.Port, dialog.Password,
                 _currentUsername!);
             room.Show();
-            ActionHint.Text = $"正在加入“{dialog.RoomName}”";
+            AppLog.Write($"正在加入“{dialog.RoomName}”");
             AppLog.Write($"已加入聊天室“{dialog.RoomName}”。");
         }
         catch (InvalidDataException ex) when (ex.Message == "密码错误")
@@ -265,7 +292,7 @@ public partial class MainWindow : Window
         {
             var room = new ChatRoomWindow(setup.RoomName, setup.Port, setup.Password, _currentUsername!, setup.IsPublic);
             room.Show();
-            ActionHint.Text = $"聊天室“{setup.RoomName}”已创建 · 端口 {setup.Port}";
+            AppLog.Write($"聊天室“{setup.RoomName}”已创建 · 端口 {setup.Port}");
             AppLog.Write($"聊天室“{setup.RoomName}”创建成功。");
         }
         catch (Exception ex)

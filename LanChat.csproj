@@ -7,13 +7,17 @@
     <Nullable>enable</Nullable>
     <UseAppHost>true</UseAppHost>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.2.0</Version>
-    <AssemblyVersion>1.2.0</AssemblyVersion>
-    <FileVersion>1.2.0</FileVersion>
+    <Version>1.2.7</Version>
+    <AssemblyVersion>1.2.7</AssemblyVersion>
+    <FileVersion>1.2.7</FileVersion>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 内置字体与 Google emoji 贴图 -->
+    <Resource Include="Assets\**\*" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="ThirdPartyNotices.txt" />

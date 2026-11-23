@@ -27,6 +27,8 @@ public partial class ChatRoomWindow : Window
     private const int AttachmentChunkBytes = 2 * 1024 * 1024;
     private const int MaxAttachmentChunks = 4096;
     private const int MaxConcurrentTransfersPerPeer = 2;
+    /// <summary>艾特列表第一项：提醒房间内所有人。</summary>
+    internal const string AllMentionName = "全体成员";
     private const string MaxAttachmentText = "1 GB";
     private readonly string _roomName;
     private readonly string _password;
@@ -94,16 +96,6 @@ public partial class ChatRoomWindow : Window
     }
     private int _uploadGeneration;
 
-    private const uint InputTypeKeyboard = 1;
-    private const uint KeyEventKeyUp = 0x0002;
-    private const ushort VirtualKeyLeftWindows = 0x5B;
-    private const ushort VirtualKeyPeriod = 0xBE;
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint inputCount, NativeInput[] inputs, int inputSize);
-
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 
     [DllImport("iphlpapi.dll", SetLastError = true)]
     private static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int addressFamily, int tableClass, uint reserved);
@@ -111,54 +103,6 @@ public partial class ChatRoomWindow : Window
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
 
-    /// <summary>
-    /// 必须与 C 的 INPUT 结构完全一致：SendInput 会校验 cbSize，
-    /// 联合体要按最大的 MOUSEINPUT 取尺寸（x64 下 INPUT 为 40 字节），
-    /// 否则会返回 ERROR_INVALID_PARAMETER（错误码 87）。
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeInput
-    {
-        public uint Type;
-        public InputUnion Data;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)] public MouseInput Mouse;
-        [FieldOffset(0)] public KeyboardInput Keyboard;
-        [FieldOffset(0)] public HardwareInput Hardware;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MouseInput
-    {
-        public int Dx;
-        public int Dy;
-        public uint MouseData;
-        public uint Flags;
-        public uint Time;
-        public UIntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KeyboardInput
-    {
-        public ushort VirtualKey;
-        public ushort ScanCode;
-        public uint Flags;
-        public uint Time;
-        public UIntPtr ExtraInfo;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct HardwareInput
-    {
-        public uint Message;
-        public ushort ParamLow;
-        public ushort ParamHigh;
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct TcpRowOwnerPid
@@ -2412,44 +2356,84 @@ public partial class ChatRoomWindow : Window
         return (completePacket, accumulator.FilePath);
     }
 
+    private bool _emojiPanelBuilt;
+
+    /// <summary>
+    /// 计算表情弹层位置：优先显示在按钮正上方，并夹紧在聊天窗口范围内；
+    /// 上方空间不足时改到按钮下方，保证不会超出窗口。
+    /// </summary>
+    private System.Windows.Controls.Primitives.CustomPopupPlacement[] EmojiPopup_Placement(Size popupSize, Size targetSize, Point offset)
+    {
+        if (EmojiPopup.PlacementTarget is not UIElement target)
+            return new[] { new System.Windows.Controls.Primitives.CustomPopupPlacement(new Point(0, -popupSize.Height), System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal) };
+
+        const double margin = 8;
+        const double gap = 10;
+        var origin = target.TranslatePoint(new Point(0, 0), this);
+        var maxX = Math.Max(margin, ActualWidth - popupSize.Width - margin);
+        var maxY = Math.Max(margin, ActualHeight - popupSize.Height - margin);
+
+        var x = Math.Clamp(origin.X, margin, maxX);
+        var y = origin.Y - popupSize.Height - gap;          // 默认在按钮上方
+        if (y < margin) y = origin.Y + targetSize.Height + gap;   // 上方空间不足 → 下方
+        y = Math.Clamp(y, margin, maxY);
+
+        return new[]
+        {
+            new System.Windows.Controls.Primitives.CustomPopupPlacement(
+                new Point(x - origin.X, y - origin.Y),
+                System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal)
+        };
+    }
+    /// <summary>在表情按钮上方弹出内置表情面板（使用 Google emoji 贴图，不影响聊天布局）。</summary>
     private void Emoji_Click(object sender, RoutedEventArgs e)
     {
-        MessageInput.Focus();
-        Keyboard.Focus(MessageInput);
-        Dispatcher.BeginInvoke(new Action(() =>
+        if (EmojiPopup.IsOpen)
         {
-            var inputs = new[]
-            {
-                KeyboardEvent(VirtualKeyLeftWindows, 0),
-                KeyboardEvent(VirtualKeyPeriod, 0),
-                KeyboardEvent(VirtualKeyPeriod, KeyEventKeyUp),
-                KeyboardEvent(VirtualKeyLeftWindows, KeyEventKeyUp)
-            };
-            var size = Marshal.SizeOf<NativeInput>();
-            var sent = SendInput((uint)inputs.Length, inputs, size);
-            if (sent == inputs.Length)
-            {
-                AppLog.Write("已请求打开 Windows 表情面板（Win+.）。");
-                return;
-            }
-
-            var error = Marshal.GetLastWin32Error();
-            AppLog.Write($"SendInput 打开表情面板失败：已发送 {sent}/{inputs.Length}，cbSize={size}，错误码 {error}。尝试改用 keybd_event。");
-
-            // 回退方案：部分环境（例如输入被另一个桌面或钩子拦截）下 SendInput 不生效。
-            keybd_event((byte)VirtualKeyLeftWindows, 0, 0, UIntPtr.Zero);
-            keybd_event((byte)VirtualKeyPeriod, 0, 0, UIntPtr.Zero);
-            keybd_event((byte)VirtualKeyPeriod, 0, KeyEventKeyUp, UIntPtr.Zero);
-            keybd_event((byte)VirtualKeyLeftWindows, 0, KeyEventKeyUp, UIntPtr.Zero);
-            AppLog.Write("已通过 keybd_event 再次请求打开 Windows 表情面板。");
-        }), System.Windows.Threading.DispatcherPriority.Input);
+            EmojiPopup.IsOpen = false;
+            return;
+        }
+        BuildEmojiPanel();
+        EmojiPopup.IsOpen = true;
+        AppLog.Write("打开内置表情面板。");
     }
 
-    private static NativeInput KeyboardEvent(ushort virtualKey, uint flags) => new()
+    private void BuildEmojiPanel()
     {
-        Type = InputTypeKeyboard,
-        Data = new InputUnion { Keyboard = new KeyboardInput { VirtualKey = virtualKey, Flags = flags } }
-    };
+        if (_emojiPanelBuilt) return;
+        _emojiPanelBuilt = true;
+        foreach (var category in EmojiCatalog.Categories)
+        {
+            var chip = new System.Windows.Controls.Primitives.ToggleButton { Content = category, Margin = new Thickness(0, 0, 6, 0), Tag = category, IsChecked = true };
+            var name = category;
+            chip.Click += (_, _) => ShowEmojiCategory(name, chip);
+            EmojiCategoryBar.Children.Add(chip);
+        }
+        ShowEmojiCategory(EmojiCatalog.Categories[0], EmojiCategoryBar.Children.OfType<System.Windows.Controls.Primitives.ToggleButton>().FirstOrDefault());
+    }
+
+    private void ShowEmojiCategory(string category, System.Windows.Controls.Primitives.ToggleButton? selected)
+    {
+        foreach (var chip in EmojiCategoryBar.Children.OfType<System.Windows.Controls.Primitives.ToggleButton>())
+            chip.IsChecked = ReferenceEquals(chip, selected);
+        EmojiItems.ItemsSource = EmojiCatalog.Items.Where(item => item.Category == category).ToArray();
+    }
+
+    private void EmojiItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string emoji } || string.IsNullOrEmpty(emoji)) return;
+        InsertTextAtCaret(emoji);
+    }
+
+    /// <summary>在光标处插入文本（表情等），不改变已有格式。</summary>
+    private void InsertTextAtCaret(string text)
+    {
+        var caret = MessageInput.CaretPosition;
+        if (caret is null) return;
+        var insertion = new TextRange(caret, caret) { Text = text };
+        MessageInput.CaretPosition = insertion.End;
+        MessageInput.Focus();
+    }
 
     private void DownloadFolder_Click(object sender, RoutedEventArgs e)
     {
@@ -2574,13 +2558,15 @@ public partial class ChatRoomWindow : Window
         if (at < 0) { HideMentionPopup(); return; }
         var fragment = before[(at + 1)..];
         if (fragment.Contains(' ') || fragment.Contains('\r') || fragment.Contains('\n')) { HideMentionPopup(); return; }
-        var candidates = _members
-            .Where(member => !string.Equals(member.Name, _userName, StringComparison.OrdinalIgnoreCase))
-            .Select(member => member.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
+        // 第一位固定为“全体成员”，其余为房间内其他成员。
+        var candidates = new[] { AllMentionName }
+            .Concat(_members
+                .Where(member => !string.Equals(member.Name, _userName, StringComparison.OrdinalIgnoreCase))
+                .Select(member => member.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name)))
             .Where(name => name.Contains(fragment, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(8)
+            .Take(9)
             .ToArray();
         if (candidates.Length == 0) { HideMentionPopup(); return; }
         _mentionFragmentStart = paragraph.ContentStart.GetPositionAtOffset(at);
@@ -2808,6 +2794,8 @@ public partial class ChatRoomWindow : Window
     private static bool MentionsUser(string? text, string userName)
     {
         if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(userName)) return false;
+        // @全体成员：房间内所有人都应收到提醒。
+        if (text.Contains("@" + AllMentionName, StringComparison.OrdinalIgnoreCase)) return true;
         var token = "@" + userName;
         var index = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
         while (index >= 0)

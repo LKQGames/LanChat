@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -6,7 +7,10 @@ using System.Windows.Media;
 
 namespace LanChat;
 
-/// <summary>把消息文本里的 @用户名 渲染成蓝色，其余保持普通文本。</summary>
+/// <summary>
+/// 富文本渲染：把消息里的 @用户名 渲染成蓝色，把 emoji 渲染成内置的 Google emoji 贴图，
+/// 其余保持普通文本。
+/// </summary>
 public sealed class MentionTextBlock : TextBlock
 {
     private static readonly Regex MentionPattern = new(@"@[\p{L}\p{N}_\-\.]+", RegexOptions.Compiled);
@@ -25,8 +29,12 @@ public sealed class MentionTextBlock : TextBlock
         }
     }
 
+    /// <summary>@全体成员 始终高亮，即使没有同名成员。</summary>
+    private const string AllMention = "全体成员";
+
     private static bool IsKnownName(string name)
     {
+        if (string.Equals(name, AllMention, StringComparison.OrdinalIgnoreCase)) return true;
         lock (KnownLock) return KnownNames.Contains(name);
     }
 
@@ -57,16 +65,59 @@ public sealed class MentionTextBlock : TextBlock
         Inlines.Clear();
         var text = SourceText;
         if (string.IsNullOrEmpty(text)) return;
-        var position = 0;
-        foreach (Match match in MentionPattern.Matches(text))
+
+        var builder = new StringBuilder();
+        var index = 0;
+        while (index < text.Length)
         {
-            if (match.Index > position) Inlines.Add(new Run(text[position..match.Index]));
-            var token = match.Value;
-            var name = token[1..];
-            if (IsKnownName(name)) Inlines.Add(new Run(token) { Foreground = MentionBrush });
-            else Inlines.Add(new Run(token));
-            position = match.Index + match.Length;
+            // 1) 艾特：@用户名
+            if (text[index] == '@')
+            {
+                var mention = MentionPattern.Match(text, index);
+                if (mention.Success && mention.Index == index)
+                {
+                    Flush();
+                    var name = mention.Value[1..];
+                    Inlines.Add(IsKnownName(name)
+                        ? new Run(mention.Value) { Foreground = MentionBrush }
+                        : new Run(mention.Value));
+                    index += mention.Length;
+                    continue;
+                }
+            }
+
+            // 2) emoji：命中内置贴图则替换为图片
+            if (EmojiCatalog.TryMatch(text, index, out var length, out var image))
+            {
+                Flush();
+                var size = Math.Max(14, FontSize * 1.22);
+                var container = new InlineUIContainer(new Image
+                {
+                    Source = image,
+                    Width = size,
+                    Height = size,
+                    Stretch = Stretch.Uniform,
+                    Margin = new Thickness(0, 0, 1, 0)
+                })
+                {
+                    BaselineAlignment = BaselineAlignment.Center
+                };
+                Inlines.Add(container);
+                index += length;
+                continue;
+            }
+
+            builder.Append(text[index]);
+            index++;
         }
-        if (position < text.Length) Inlines.Add(new Run(text[position..]));
+        Flush();
+        return;
+
+        void Flush()
+        {
+            if (builder.Length == 0) return;
+            Inlines.Add(new Run(builder.ToString()));
+            builder.Clear();
+        }
     }
 }

@@ -1,26 +1,41 @@
 <Window x:Class="LanChat.BanListWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="封禁列表" Width="520" Height="460" MinWidth="420" MinHeight="340"
-        WindowStartupLocation="CenterOwner" Background="#101218" Foreground="{StaticResource OnSurfaceBrush}"
-        FontFamily="Segoe UI, Microsoft YaHei UI">
-    <Grid Margin="22">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <DockPanel Margin="0,0,0,14">
-            <TextBlock Text="封禁列表" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        Title="封禁列表" Width="560" Height="500" MinWidth="460" MinHeight="360"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource SurfaceBrush}"
+        Foreground="{StaticResource OnSurfaceBrush}" FontFamily="./Assets/Fonts/#Google Sans Flex, Microsoft YaHei UI">
+    <Grid Background="{StaticResource SurfaceBrush}" Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,16">
+            <TextBlock Text="封禁列表" Style="{StaticResource HeadlineSmall}" FontSize="22" />
+            <TextBlock Text="被移出或封禁的成员会显示在这里" Style="{StaticResource BodySmall}" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="{StaticResource SurfaceContainerLowBrush}" CornerRadius="20" Padding="8">
+            <ListBox x:Name="BansList" Background="Transparent" SelectionChanged="BansList_SelectionChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{StaticResource SecondaryContainerBrush}" CornerRadius="8" Padding="10,4" Width="120" Margin="0,0,12,0">
+                                <TextBlock Text="{Binding Kind}" Foreground="{StaticResource OnSecondaryContainerBrush}" FontSize="11" TextAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="{Binding Target}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="4,16,4,0">
+            <TextBlock x:Name="EmptyHint" Text="当前没有被封禁的用户或 IP。" Style="{StaticResource BodySmall}" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <ToggleButton Content="📌 置顶" Checked="Pin_Checked" Unchecked="Pin_Unchecked" Margin="0,0,8,0"/>
-                <Button Content="✕" ToolTip="关闭窗口" Click="Close_Click" Padding="9,5"/>
-            </StackPanel>
-        </DockPanel>
-        <ListBox x:Name="BansList" Grid.Row="1" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource OnSurfaceBrush}" BorderBrush="#343946" SelectionChanged="BansList_SelectionChanged">
-            <ListBox.ItemTemplate><DataTemplate><StackPanel Orientation="Horizontal" Margin="5"><TextBlock Text="{Binding Kind}" Foreground="{StaticResource MutedBrush}" Width="110"/><TextBlock Text="{Binding Target}" FontWeight="SemiBold"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
-        </ListBox>
-        <DockPanel Grid.Row="2" Margin="0,14,0,0">
-            <TextBlock x:Name="EmptyHint" Text="当前没有被封禁的用户或 IP。" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button x:Name="UnbanUserButton" Content="解封用户" Click="UnbanUser_Click" Margin="0,0,8,0" IsEnabled="False"/>
-                <Button x:Name="UnbanIpButton" Content="解封用户 IP" Click="UnbanIp_Click" IsEnabled="False"/>
+                <Button x:Name="UnbanUserButton" Content="解封用户" Click="UnbanUser_Click" Style="{StaticResource TonalButton}"
+                        Margin="0,0,8,0" IsEnabled="False" />
+                <Button x:Name="UnbanIpButton" Content="解封用户 IP" Click="UnbanIp_Click" IsEnabled="False" />
             </StackPanel>
         </DockPanel>
     </Grid>

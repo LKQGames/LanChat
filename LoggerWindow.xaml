@@ -1,36 +1,51 @@
 <Window x:Class="LanChat.LoggerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="程序运行日志" Width="760" Height="480" MinWidth="560" MinHeight="320"
-        WindowStartupLocation="CenterScreen" Background="#101218" Foreground="{StaticResource OnSurfaceBrush}"
-        FontFamily="Segoe UI, Microsoft YaHei UI" Closed="Window_Closed">
-    <Grid Margin="22">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <DockPanel Margin="3,0,3,14">
+        Title="程序运行日志" Width="820" Height="520" MinWidth="600" MinHeight="360"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource SurfaceBrush}"
+        Foreground="{StaticResource OnSurfaceBrush}" FontFamily="./Assets/Fonts/#Google Sans Flex, Microsoft YaHei UI"
+        Closed="Window_Closed">
+    <Grid Background="{StaticResource SurfaceBrush}" Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <DockPanel Margin="4,0,4,16">
             <StackPanel>
-                <TextBlock Text="程序运行日志" FontSize="21" FontWeight="SemiBold" />
-                <TextBlock Text="实时记录当前程序的房间和连接活动" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="程序运行日志" Style="{StaticResource HeadlineSmall}" FontSize="22" />
+                <TextBlock Text="实时记录当前程序的房间和连接活动" Style="{StaticResource BodySmall}" Margin="0,2,0,0" />
             </StackPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button Content="保存日志" Click="SaveLog_Click" Background="#252A35" Foreground="#C2D2F5" Padding="12,7" Margin="0,0,8,0" />
-                <ToggleButton Content="📌 置顶" Padding="10,6" Checked="Pin_Checked" Unchecked="Pin_Unchecked" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="保存日志" Click="SaveLog_Click" Style="{StaticResource TonalButton}" Padding="16,9" />
             </StackPanel>
         </DockPanel>
-        <Border Grid.Row="1" Background="#181B22" CornerRadius="20" Padding="12">
-            <ListBox x:Name="EntriesList" BorderThickness="0" Background="Transparent" Foreground="#FFFFFF" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
+        <Border Grid.Row="1" Background="{StaticResource SurfaceContainerLowBrush}" CornerRadius="20" Padding="10">
+            <ListBox x:Name="EntriesList" Background="Transparent" FontFamily="Consolas, ./Assets/Fonts/#Google Sans Flex, Microsoft YaHei UI" FontSize="12"
                      ScrollViewer.VerticalScrollBarVisibility="Auto" ItemsSource="{Binding Entries}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{StaticResource OnSurfaceBrush}" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
-                        <Setter Property="Foreground" Value="#FFFFFF" />
-                        <Setter Property="Padding" Value="7,4" />
-                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Foreground" Value="{StaticResource OnSurfaceBrush}" />
+                        <Setter Property="Padding" Value="8,5" />
+                        <Setter Property="Margin" Value="0" />
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Foreground" Value="#FFFFFF" />
-                                <Setter Property="Background" Value="#30466F" />
-                            </Trigger>
-                        </Style.Triggers>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SurfaceContainerHighBrush}" /></Trigger>
+                                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SecondaryContainerBrush}" /></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
                 </ListBox.ItemContainerStyle>
             </ListBox>

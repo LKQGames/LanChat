@@ -17,3 +17,18 @@ FFmpeg
 ------
 LanChat no longer bundles FFmpeg. Screen capture, video encoding and input
 injection are handled entirely by the bundled RustDesk client.
+
+Google Sans Flex (font)
+-----------------------
+Google Sans Flex is bundled as an embedded font resource and used as the UI
+font (Latin glyphs), with Microsoft YaHei UI as the CJK fallback. The font is
+distributed by Google via Google Fonts under the SIL Open Font License 1.1.
+License: https://scripts.sil.org/OFL
+Source: https://fonts.google.com/specimen/Google+Sans+Flex
+
+Google Noto Emoji (emoji artwork)
+---------------------------------
+The built-in emoji picker uses 64 px Google/Noto emoji images, downscaled to a
+32 px sprite sheet and embedded in the application. Noto Emoji is licensed
+under the Apache License 2.0 (and CC-BY 4.0 for the artwork).
+Source: https://github.com/googlefonts/noto-emoji
